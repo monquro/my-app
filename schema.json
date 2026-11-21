@@ -1,0 +1,158 @@
+{
+ "note": "한 줄이 무엇인지(grain)는 사람이 정한 것입니다. 조인하기 전에 반드시 봅니다.",
+ "tables": {
+  "account_weekly": {
+   "grain": "계정 1개 × 주 1개",
+   "rows": 44,
+   "columns": [
+    {
+     "name": "account",
+     "type": "VARCHAR",
+     "values": [
+      "A_IG",
+      "A_TT",
+      "B_IG",
+      "B_TT"
+     ]
+    },
+    {
+     "name": "week_start",
+     "type": "DATE"
+    },
+    {
+     "name": "followers",
+     "type": "BIGINT"
+    },
+    {
+     "name": "views",
+     "type": "BIGINT"
+    },
+    {
+     "name": "interactions",
+     "type": "BIGINT"
+    },
+    {
+     "name": "posts_count",
+     "type": "BIGINT"
+    }
+   ]
+  },
+  "posts": {
+   "grain": "게시물 1개(한 번 기록)",
+   "rows": 336,
+   "columns": [
+    {
+     "name": "post_id",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "account",
+     "type": "VARCHAR",
+     "values": [
+      "A_IG",
+      "A_TT",
+      "B_IG",
+      "B_TT"
+     ]
+    },
+    {
+     "name": "posted_date",
+     "type": "DATE"
+    },
+    {
+     "name": "recorded_on",
+     "type": "DATE"
+    },
+    {
+     "name": "format",
+     "type": "VARCHAR",
+     "values": [
+      "Carousel",
+      "Post",
+      "Reels",
+      "Video"
+     ]
+    },
+    {
+     "name": "title",
+     "type": "VARCHAR"
+    },
+    {
+     "name": "category",
+     "type": "VARCHAR",
+     "values": [
+      "매장 홍보",
+      "부스 관련",
+      "비관련"
+     ]
+    },
+    {
+     "name": "views",
+     "type": "BIGINT"
+    },
+    {
+     "name": "likes",
+     "type": "BIGINT"
+    },
+    {
+     "name": "comments",
+     "type": "BIGINT"
+    },
+    {
+     "name": "shares",
+     "type": "BIGINT"
+    },
+    {
+     "name": "saved",
+     "type": "BIGINT"
+    },
+    {
+     "name": "full_video_rate",
+     "type": "DOUBLE"
+    }
+   ]
+  },
+  "targets": {
+   "grain": "계정 1개",
+   "rows": 5,
+   "columns": [
+    {
+     "name": "account",
+     "type": "VARCHAR",
+     "values": [
+      "A_IG",
+      "A_TT",
+      "A_YT",
+      "B_IG",
+      "B_TT"
+     ]
+    },
+    {
+     "name": "brand",
+     "type": "VARCHAR",
+     "values": [
+      "A",
+      "B"
+     ]
+    },
+    {
+     "name": "platform",
+     "type": "VARCHAR",
+     "values": [
+      "IG",
+      "TT",
+      "YT"
+     ]
+    },
+    {
+     "name": "target_followers",
+     "type": "BIGINT"
+    },
+    {
+     "name": "weekly_post_target",
+     "type": "BIGINT"
+    }
+   ]
+  }
+ }
+}

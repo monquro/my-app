@@ -1,0 +1,10 @@
+# 배포 · 실행 부산물
+.vercel/
+__pycache__/
+*.pyc
+.env
+.env.*
+tools/answer/
+내려받기/
+.DS_Store
+.claude/settings.local.json

@@ -1,0 +1,88 @@
+{
+  "title": "숏폼 4계정 주간 성과 — 내 질문",
+  "owner": "질문과 SQL은 사람이 정한 기준대로 짰고, «확인할 값»은 edata9-data 로 실제 실행해서 얻은 값입니다. 이 앱의 데이터는 가상 데이터입니다.",
+  "files": [
+    {
+      "match": "목표",
+      "table": "targets"
+    },
+    {
+      "match": "계정주간",
+      "table": "account_weekly"
+    },
+    {
+      "match": "게시물",
+      "table": "posts"
+    }
+  ],
+  "questions": [
+    {
+      "id": "weekly_kpi",
+      "q": "가장 늦은 주, 계정마다 팔로워 · 조회 · 인터랙션 · 업로드는 전주보다 어땠나 (ⓐ 전체 성과 표)",
+      "judge": "",
+      "sql": "WITH latest AS (\n  SELECT MAX(CAST(week_start AS DATE)) AS wk FROM account_weekly\n), accts AS (\n  SELECT DISTINCT account FROM account_weekly\n), cur AS (\n  SELECT a.account, a.followers, a.views, a.interactions, a.posts_count\n  FROM account_weekly a, latest l\n  WHERE CAST(a.week_start AS DATE) = l.wk\n), prev AS (\n  SELECT a.account, a.followers, a.views, a.interactions\n  FROM account_weekly a, latest l\n  WHERE CAST(a.week_start AS DATE) = l.wk - 7\n), up AS (\n  SELECT p.account, COUNT(*) AS n\n  FROM posts p, latest l\n  WHERE CAST(date_trunc('week', CAST(p.posted_date AS DATE)) AS DATE) = l.wk\n  GROUP BY p.account\n)\nSELECT x.account AS 계정,\n       c.followers AS 팔로워,\n       c.followers - pv.followers AS 팔로워_증감,\n       c.views AS 조회_카드,\n       ROUND(100.0 * (c.views - pv.views) / pv.views, 1) AS 조회_전주대비_pct,\n       c.interactions AS 인터랙션_카드,\n       ROUND(100.0 * (c.interactions - pv.interactions) / pv.interactions, 1) AS 인터랙션_전주대비_pct,\n       COALESCE(u.n, 0) AS 업로드수,\n       t.weekly_post_target AS 목표,\n       ROUND(100.0 * COALESCE(u.n, 0) / t.weekly_post_target, 1) AS 달성_pct,\n       c.posts_count - COALESCE(u.n, 0) AS posts_count_차이,\n       CASE WHEN c.account IS NULL THEN '이번 주 카드 기록 없음' ELSE '' END\n         || CASE WHEN c.account IS NULL AND pv.account IS NULL THEN ' · ' ELSE '' END\n         || CASE WHEN pv.account IS NULL THEN '전주 기록 없음' ELSE '' END AS 비고\nFROM accts x\nLEFT JOIN cur c ON c.account = x.account\nLEFT JOIN prev pv ON pv.account = x.account\nLEFT JOIN up u ON u.account = x.account\nLEFT JOIN targets t ON t.account = x.account\nORDER BY x.account",
+      "check": [
+        {
+          "where": {
+            "계정": "A_TT"
+          },
+          "col": "업로드수",
+          "want": 8
+        },
+        {
+          "where": {
+            "계정": "A_TT"
+          },
+          "col": "조회_전주대비_pct",
+          "want": -64.2
+        }
+      ]
+    },
+    {
+      "id": "top_posts",
+      "q": "가장 늦은 주에 올린 게시물 가운데, 계정마다 조회가 높은 5개는 무엇인가 (ⓒ 상위 콘텐츠 표)",
+      "judge": "",
+      "sql": "WITH latest AS (\n  SELECT MAX(CAST(week_start AS DATE)) AS wk FROM account_weekly\n), w AS (\n  SELECT p.account, p.format, p.title, p.views, p.likes, p.shares, p.saved, p.posted_date, p.recorded_on, p.category,\n         ROW_NUMBER() OVER (PARTITION BY p.account ORDER BY p.views DESC, p.likes DESC, p.post_id) AS rk\n  FROM posts p, latest l\n  WHERE CAST(date_trunc('week', CAST(p.posted_date AS DATE)) AS DATE) = l.wk\n)\nSELECT account AS 계정,\n       rk AS 순위,\n       format AS 분류,\n       title AS 콘텐츠,\n       views AS 조회,\n       likes AS 좋아요,\n       shares AS 공유,\n       saved AS 저장_IG만,\n       CAST(recorded_on AS DATE) - CAST(posted_date AS DATE) AS 나이_일,\n       category AS 카테고리\nFROM w\nWHERE rk <= 5\nORDER BY account, rk",
+      "check": [
+        {
+          "where": {
+            "계정": "A_IG",
+            "순위": 1
+          },
+          "col": "조회",
+          "want": 13436
+        },
+        {
+          "where": {
+            "계정": "A_TT",
+            "순위": 1
+          },
+          "col": "나이_일",
+          "want": 2
+        }
+      ]
+    },
+    {
+      "id": "summary_12w",
+      "q": "계정마다 12주를 한 줄로 — 카드 조회 합 · 게시물 수 · 업로드 목표 달성률 · 게시물 한 개당 조회수 (A_YT 포함)",
+      "judge": "",
+      "sql": "WITH aw AS (\n  SELECT account, SUM(views) AS card_views FROM account_weekly GROUP BY account\n), p AS (\n  SELECT account, COUNT(*) AS n_posts, AVG(views) AS avg_views FROM posts GROUP BY account\n)\nSELECT t.account AS 계정,\n       COALESCE(aw.card_views, 0) AS 카드조회합,\n       COALESCE(p.n_posts, 0) AS 게시물수,\n       t.weekly_post_target AS 주간목표,\n       ROUND(COALESCE(p.n_posts, 0) / (t.weekly_post_target * 12), 3) AS 업로드목표달성률,\n       ROUND(p.avg_views, 1) AS 게시물당조회수\nFROM targets t\nLEFT JOIN aw ON aw.account = t.account\nLEFT JOIN p ON p.account = t.account\nORDER BY t.account",
+      "check": [
+        {
+          "where": {
+            "계정": "A_YT"
+          },
+          "col": "게시물수",
+          "want": 0
+        },
+        {
+          "where": {
+            "계정": "B_TT"
+          },
+          "col": "업로드목표달성률",
+          "want": 1.417
+        }
+      ]
+    }
+  ]
+}
