@@ -55,9 +55,12 @@ function engineLine() {
   // 파일이 많으면 이름을 다 늘어놓지 않고 개수만 — 이름은 마우스를 올리면 보인다
   const full = `내 파일로 묻는 중 · ${mine.map(t => `${t} ← ${S.mine[t].file}`).join(" · ")}`;
   const nFiles = mine.reduce((s, t) => s + (S.mine[t].count || 1), 0);
-  $("#engine").textContent = !mine.length
-    ? `준비됨 · 불러온 표 ${S.loaded.size}개 / ${Object.keys(S.schema.tables).length}개`
-    : nFiles > 3 ? `내 파일로 묻는 중 · 파일 ${nFiles}개 · 표 ${mine.length}개` : full;
+  // 맨 위 상태 바: 데이터 출처 · 불러온 표 · 엔진
+  $("#st-src").textContent = mine.length ? `내 파일 ${nFiles}개 · 표 ${mine.length}개` : "가상 데이터";
+  $("#st-src").title = mine.length ? full : "";
+  $("#st-src").classList.toggle("mine", mine.length > 0);
+  $("#st-tables").textContent = `${S.loaded.size} / ${Object.keys(S.schema.tables).length}`;
+  $("#engine").textContent = mine.length ? "내 파일로 묻는 중" : "준비됨";
   $("#engine").title = mine.length ? full : "";
   $("#engine").classList.add("ready");
 }
@@ -200,6 +203,8 @@ async function loadMine(fileList) {
   $("#btn-mine-reset").hidden = !Object.keys(S.mine).length;
   engineLine();
   document.querySelectorAll(".q .out").forEach(o => { o.innerHTML = ""; });
+  // 새 파일이 들어오면 대시보드를 그 파일의 가장 늦은 주로 다시 그린다
+  if (Object.keys(S.mine).length) { D.week = null; renderDash(); }
 }
 
 // ── 읽기 전용 검사 (api/sql.py 와 같은 규칙) ───────────────
@@ -279,34 +284,57 @@ function checks(q, res) {
 }
 
 // ── 준비한 질문 ───────────────────────────────────────
+// 결과가 먼저, SQL 은 «SQL 보기»를 눌러야 펼쳐진다. 카드 머리에 주기 · 보고서 칸, 안에 판단 기준과 지표 정의.
+const defLine = d => { const k = d.indexOf(" — "); return k < 0 ? esc(d) : `<b>${esc(d.slice(0, k))}</b> — ${esc(d.slice(k + 3))}`; };
 function renderQuestions() {
-  $("#qlist").innerHTML = S.questions.map(q => `
+  $("#qlist").innerHTML = S.questions.map((q, i) => `
     <div class="q" id="q-${q.id}">
-      <h4 data-q="${q.id}">${esc(q.q)}</h4>
+      <button class="qhead" data-q="${q.id}" aria-expanded="false">
+        <span class="qno">Q${i + 1}</span>
+        <span class="qmain">${(q.tags || []).length ? `<span class="qtags">${q.tags.map(t => `<span class="qtag">${esc(t)}</span>`).join("")}</span>` : ""}
+          <span class="qtitle">${esc(q.q)}</span></span>
+        <svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg>
+      </button>
       <div class="body" hidden>
-        <div class="judge">${esc(q.judge)}</div>
-        <pre class="sql">${esc(q.sql)}</pre>
+        ${q.judge ? `<div class="judge"><span class="i" aria-hidden="true">i</span><span>${esc(q.judge)}</span></div>` : ""}
+        ${(q.defs || []).length ? `<ul class="defs">${q.defs.map(d => `<li>${defLine(d)}</li>`).join("")}</ul>` : ""}
         <div class="row"><button class="primary" data-run="${q.id}">실행</button>
           <button class="ghost" data-edit="${q.id}">고쳐서 묻기</button></div>
         <div class="out"></div>
+        <details class="sqlbox"><summary>SQL 보기</summary><pre class="sql">${esc(q.sql)}</pre></details>
       </div>
     </div>`).join("");
   document.querySelectorAll("[data-q]").forEach(h => h.addEventListener("click", () => {
-    const b = h.parentElement.querySelector(".body"); b.hidden = !b.hidden;
+    const b = h.closest(".q").querySelector(".body"); b.hidden = !b.hidden;
+    h.setAttribute("aria-expanded", String(!b.hidden));
   }));
-  document.querySelectorAll("[data-run]").forEach(b => b.addEventListener("click", async () => {
-    const q = S.questions.find(x => x.id === b.dataset.run);
-    const out = b.closest(".q").querySelector(".out");
-    b.disabled = true; b.textContent = "실행 중…";
-    try { const res = await run(q.sql); out.innerHTML = render(res) + checks(q, res); out.dataset.done = "1"; }
-    catch (e) { out.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
-    b.disabled = false; b.textContent = "실행";
-  }));
+  document.querySelectorAll("[data-run]").forEach(b => b.addEventListener("click", () => runQ(b)));
   document.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => {
     $("#sql").value = S.questions.find(x => x.id === b.dataset.edit).sql;
     document.querySelector("[data-tab=ask]").click();
   }));
 }
+
+async function runQ(b) {
+  const q = S.questions.find(x => x.id === b.dataset.run);
+  const out = b.closest(".q").querySelector(".out");
+  b.disabled = true; b.textContent = "실행 중…";
+  try { const res = await run(q.sql); out.innerHTML = render(res) + checks(q, res); out.dataset.done = "1"; }
+  catch (e) { out.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+  b.disabled = false; b.textContent = "실행";
+}
+
+// 모두 실행 — 카드를 펼치고 위에서부터 차례로
+$("#btn-run-all").addEventListener("click", async e => {
+  const all = e.currentTarget;
+  all.disabled = true;
+  for (const q of document.querySelectorAll(".q")) {
+    q.querySelector(".body").hidden = false;
+    q.querySelector("[data-q]").setAttribute("aria-expanded", "true");
+    await runQ(q.querySelector("[data-run]"));
+  }
+  all.disabled = false;
+});
 
 // ── 직접 묻기 ─────────────────────────────────────────
 $("#btn-run").addEventListener("click", async () => {
@@ -316,6 +344,11 @@ $("#btn-run").addEventListener("click", async () => {
   catch (e) { $("#ask-out").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
   b.disabled = false; b.textContent = "실행";
 });
+// SQL 칸에서 Ctrl+Enter(맥은 ⌘+Enter)로 실행
+$("#sql").addEventListener("keydown", e => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (!$("#btn-run").disabled) $("#btn-run").click(); }
+});
+if (/Mac|iPhone|iPad/.test(navigator.platform)) $("#run-hint").textContent = "⌘+Enter로 실행";
 
 $("#btn-nl").addEventListener("click", async () => {
   const q = $("#nl").value.trim();
@@ -345,10 +378,258 @@ function renderTables() {
       <span class="muted">${i.columns.map(c => esc(c.name) + (c.values ? ` <small>(${c.values.map(esc).join("·")})</small>` : "")).join(", ")}</span></div>`).join("");
 }
 
+// 표 사이의 연결 — 한 줄이 무엇인지와 잇는 키. 카드 숫자를 게시물에 붙여 더하면 불어난다는 경고까지.
+function renderErd() {
+  const T = S.schema.tables, file = t => S.files.find(f => f.table === t)?.match || "";
+  const box = t => T[t] ? `<div class="ebox"><b>${esc(t)}</b><span>${esc(file(t))} 파일 · 한 줄 = ${esc(T[t].grain)}</span>
+    <em>${T[t].rows.toLocaleString("ko-KR")}행 (가상 데이터)</em></div>` : "";
+  const link = (key, card) => `<div class="elink" aria-hidden="true"><span>${esc(key)}</span><i>1 : N</i><small>${esc(card)}</small></div>`;
+  $("#erd").innerHTML = box("targets") + link("account", "계정마다 0~N주")
+    + box("account_weekly") + link("account + 그 주", "그 주에 올린 게시물")
+    + box("posts");
+  $("#erd").insertAdjacentHTML("afterend", `<p class="cap warnline"><span class="wi" aria-hidden="true">!</span>
+    account_weekly 의 카드 숫자(조회 · 인터랙션)를 posts 에 붙인 채로 더하면 게시물 수만큼 불어납니다.
+    표마다 계정별로 먼저 집계한 뒤 붙입니다.</p>`);
+}
+
+// ── 대시보드 ─────────────────────────────────────────
+// 숫자는 «준비한 질문»의 weekly_kpi · top_posts SQL 에서 «가장 늦은 주» 한 줄만 고른 주로 바꿔 돌린다.
+// 새 정의를 만들지 않는다. IG 와 TT, 카드 조회와 게시물 조회는 더하지 않는다.
+const LATEST = "SELECT MAX(CAST(week_start AS DATE)) AS wk FROM account_weekly";
+const D = { week: null, plat: "all", kpi: null, top: null, trend: null, tgt: null, sql: {} };
+const nf = v => v == null ? "—" : Number(v).toLocaleString("ko-KR");
+const isDay = s => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
+const addDays = (day, n) => { const [y, m, d] = day.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); };
+// «n월 n주차» — 그 주 월요일이 속한 달에서 몇 번째 월요일인지
+const weekName = day => { const [, m, d] = day.split("-").map(Number); return `${m}월 ${Math.ceil(d / 7)}주차`; };
+const atWeek = (sql, wk) => isDay(wk) && sql.includes(LATEST) ? sql.replace(LATEST, `SELECT CAST('${wk}' AS DATE) AS wk`) : null;
+const PLAT = { IG: "Instagram", TT: "TikTok", YT: "YouTube" };
+const platOf = a => String(a).split("_").pop();
+
+function dashMsg(text, kind) {
+  const m = $("#dash-msg");
+  m.hidden = !text; m.className = `dash-msg ${kind || ""}`; m.textContent = text || "";
+}
+
+async function renderDash() {
+  dashMsg("");
+  $("#tab-dash").classList.add("loading");
+  try {
+    const weeks = (await run("SELECT DISTINCT CAST(week_start AS DATE) AS w FROM account_weekly ORDER BY w DESC")).rows.map(r => r.w).filter(isDay);
+    if (!weeks.length) throw new Error("계정주간 표에 주(week_start)가 없습니다");
+    if (!weeks.includes(D.week)) D.week = weeks[0];
+    $("#dash-week").innerHTML = weeks.map(w => `<option value="${w}"${w === D.week ? " selected" : ""}>`
+      + `${w} ~ ${addDays(w, 6).slice(5)} · ${weekName(w)}${w === weeks[0] ? " · 가장 늦은 주" : ""}</option>`).join("");
+    await drawWeek();
+  } catch (e) {
+    dashMsg(e.message, "err");
+    $("#dash-cards").innerHTML = ""; $("#dash-top").innerHTML = ""; $("#dash-yt").textContent = "";
+    $("#btn-report").disabled = true;
+  }
+  $("#tab-dash").classList.remove("loading");
+}
+
+async function drawWeek() {
+  const wk = D.week;
+  const kq = S.questions.find(q => q.id === "weekly_kpi"), tq = S.questions.find(q => q.id === "top_posts");
+  const kSql = kq && atWeek(kq.sql, wk), tSql = tq && atWeek(tq.sql, wk);
+  if (!kSql || !tSql) throw new Error("questions.json 의 weekly_kpi · top_posts SQL 모양이 바뀌어 대시보드가 주를 고르지 못합니다");
+  const trendSql = `WITH w AS (SELECT CAST('${wk}' AS DATE) AS wk)
+SELECT account, CAST(week_start AS DATE) AS week_start, views
+FROM account_weekly, w
+WHERE CAST(week_start AS DATE) BETWEEN w.wk - 77 AND w.wk
+ORDER BY account, week_start`;
+  const recSql = `WITH w AS (SELECT CAST('${wk}' AS DATE) AS wk)
+SELECT MIN(CAST(recorded_on AS DATE)) AS lo, MAX(CAST(recorded_on AS DATE)) AS hi
+FROM posts, w
+WHERE CAST(date_trunc('week', CAST(posted_date AS DATE)) AS DATE) = w.wk`;
+  // 차례로 돌린다 — 연결 하나에서 한 번에 하나씩
+  const kpi = await run(kSql), top = await run(tSql), trend = await run(trendSql), rec = await run(recSql);
+  const tgt = await run("SELECT account, platform, weekly_post_target FROM targets ORDER BY account");
+  Object.assign(D, { kpi, top, trend, tgt, sql: { "ⓐ 계정 카드 (weekly_kpi)": kSql, "ⓒ 상위 콘텐츠 (top_posts)": tSql, "최근 12주 추이": trendSql } });
+
+  const end = addDays(wk, 6);
+  $("#st-week").textContent = `${wk} ~ ${end.slice(5)}`;
+  $("#dash-range").textContent = `${wk} ~ ${end} (월~일) · ${weekName(wk)}`;
+  const r0 = rec.rows[0] || {};
+  $("#st-rec").textContent = !r0.hi ? "—" : r0.lo === r0.hi ? r0.hi : `${r0.lo} ~ ${r0.hi}`;
+  paintDash();
+  $("#report-text").value = reportText();
+  $("#btn-report").disabled = false;
+  $("#dash-sql").innerHTML = Object.entries(D.sql).map(([k, s]) => `<p class="label">${esc(k)}</p><pre class="sql">${esc(s)}</pre>`).join("");
+  $("#dash-weekly").innerHTML = weeklyTable();
+}
+
+// 계정마다 최근 12주(고른 주까지) — 빠진 주는 null 로 둔다(선을 끊는다)
+function seriesOf(account) {
+  return Array.from({ length: 12 }, (_, i) => {
+    const w = addDays(D.week, (i - 11) * 7);
+    const hit = D.trend.rows.find(r => r.account === account && r.week_start === w);
+    return { w, v: hit ? hit.views : null };
+  });
+}
+
+function spark(series, account) {
+  const W = 240, H = 46, P = 5, n = series.length, step = (W - 2 * P) / (n - 1);
+  const vals = series.map(s => s.v).filter(v => v != null);
+  if (!vals.length) return `<p class="spark-empty">최근 12주 카드 기록 없음</p>`;
+  const lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1;
+  const x = i => P + i * step, y = v => H - P - ((v - lo) / span) * (H - 2 * P);
+  let d = "", pen = false;
+  series.forEach((s, i) => { if (s.v == null) { pen = false; return; } d += `${pen ? "L" : "M"}${x(i).toFixed(1)} ${y(s.v).toFixed(1)}`; pen = true; });
+  const lone = series.map((s, i) => s.v != null && i < n - 1 && series[i - 1]?.v == null && series[i + 1]?.v == null
+    ? `<circle cx="${x(i).toFixed(1)}" cy="${y(s.v).toFixed(1)}" r="2.5" class="dot"/>` : "").join("");
+  const cur = series[n - 1];
+  const hits = series.map((s, i) => `<rect class="hit" x="${(x(i) - step / 2).toFixed(1)}" y="0" width="${step.toFixed(1)}" height="${H}"
+    data-tip="${s.w} 주 · ${s.v == null ? "카드 기록 없음" : "조회(카드) " + nf(s.v)}"></rect>`).join("");
+  const gaps = series.filter(s => s.v == null).map(s => s.w.slice(5));
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" role="img"
+      aria-label="${esc(account)} 최근 12주 조회(카드), ${nf(Math.min(...vals))}에서 ${nf(Math.max(...vals))} 사이">
+      <path d="${d}" class="line"/>${lone}
+      ${cur.v != null ? `<circle cx="${x(n - 1).toFixed(1)}" cy="${y(cur.v).toFixed(1)}" r="4" class="cur"/>` : ""}${hits}</svg>
+    <p class="spark-cap">최근 12주 조회(카드)${gaps.length ? ` · 기록 없는 주 ${gaps.length}개 (${gaps.join(", ")})` : ""}</p>`;
+}
+
+const delta = (v, unit) => v == null
+  ? `<span class="delta none">전주 없음</span>`
+  : `<span class="delta ${v > 0 ? "up" : v < 0 ? "down" : "flat"}"><span aria-hidden="true">${v > 0 ? "▲" : v < 0 ? "▼" : "■"}</span> ${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toLocaleString("ko-KR")}${unit}</span>`;
+
+function card(r) {
+  const a = r.계정, p = platOf(a), noCard = r.조회_카드 == null;
+  // 비고(카드 기록 없음 · 전주 기록 없음)는 숫자 자리에 바로 적으므로 깃발로 다시 달지 않는다
+  const flags = [];
+  if (r.posts_count_차이) flags.push(["warn", `카드의 업로드 수(${nf(r.업로드수 + r.posts_count_차이)})와 게시물 파일(${nf(r.업로드수)}개)이 다릅니다 — Asana 업로드 기록과 대조`]);
+  const pct = r.달성_pct;
+  return `<article class="kcard" data-plat="${esc(p)}">
+    <header><b>${esc(a)}</b><span class="pl pl-${esc(p)}">${esc(PLAT[p] || p)}</span></header>
+    <div class="kmain">
+      <span class="klbl">조회 (카드)</span>
+      <span class="kbig">${noCard ? "이번 주 기록 없음" : nf(r.조회_카드)}</span>
+      ${noCard ? "" : r.조회_전주대비_pct == null ? `<span class="delta none">전주 기록 없음</span>`
+        : `${delta(r.조회_전주대비_pct, "%")}<span class="vs">전주 대비</span>`}
+    </div>
+    ${spark(seriesOf(a), a)}
+    <dl class="kv">
+      <div><dt>팔로워</dt><dd>${nf(r.팔로워)} ${r.팔로워_증감 == null ? "" : delta(r.팔로워_증감, "")}</dd></div>
+      <div><dt>인터랙션 (카드)</dt><dd>${nf(r.인터랙션_카드)} ${r.인터랙션_전주대비_pct == null ? "" : delta(r.인터랙션_전주대비_pct, "%")}</dd></div>
+      <div><dt>업로드</dt><dd><b>${nf(r.업로드수)}</b> / 목표 ${nf(r.목표)} · ${pct == null ? "—" : pct + "%"}</dd></div>
+    </dl>
+    <div class="meter" role="meter" aria-label="업로드 목표 달성" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(pct || 0, 100)}">
+      <i style="width:${Math.min(pct || 0, 100)}%"></i></div>
+    ${flags.length ? `<ul class="flags">${flags.map(([k, t]) => `<li class="${k}"><span class="fi" aria-hidden="true">${k === "warn" ? "!" : "i"}</span>${esc(t)}</li>`).join("")}</ul>` : ""}
+  </article>`;
+}
+
+function topBox(account) {
+  const rows = D.top.rows.filter(r => r.계정 === account);
+  const p = platOf(account);
+  return `<section class="topbox" data-plat="${esc(p)}">
+    <h3><b>${esc(account)}</b><span class="pl pl-${esc(p)}">${esc(PLAT[p] || p)}</span></h3>
+    ${rows.length ? `<table class="mini"><thead><tr><th>#</th><th>콘텐츠</th><th class="n">조회</th><th class="n">좋아요</th><th class="n">나이</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td class="rk">${r.순위}</td>
+        <td><span class="tt">${esc(r.콘텐츠)}</span><small>${esc(r.분류)} · ${esc(r.카테고리)}</small></td>
+        <td class="n">${nf(r.조회)}</td><td class="n">${nf(r.좋아요)}</td>
+        <td class="n">${r.나이_일 == null ? "—" : r.나이_일 + "일"}${r.나이_일 != null && r.나이_일 <= 3 ? `<span class="young">덜 자람</span>` : ""}</td></tr>`).join("")}
+    </tbody></table>` : `<p class="cap">이번 주에 올린 게시물이 없습니다.</p>`}
+  </section>`;
+}
+
+function paintDash() {
+  const show = r => D.plat === "all" || platOf(r) === D.plat;
+  const rows = D.kpi.rows.filter(r => show(r.계정));
+  $("#dash-cards").innerHTML = rows.map(card).join("") || `<p class="cap">이 플랫폼의 계정이 없습니다.</p>`;
+  $("#dash-top").innerHTML = rows.map(r => topBox(r.계정)).join("");
+  const seen = new Set(D.kpi.rows.map(r => r.계정));
+  const quiet = D.tgt.rows.filter(t => !seen.has(t.account));
+  $("#dash-yt").textContent = quiet.length
+    ? `${quiet.map(t => `${t.account}(${PLAT[t.platform] || t.platform}, 주 ${t.weekly_post_target}개 목표)`).join(" · ")}는 목표만 있고 아직 계정주간 기록이 없어 카드에서 뺐습니다.`
+    : "";
+}
+
+function weeklyTable() {
+  const accts = [...new Set(D.trend.rows.map(r => r.account))].sort();
+  const weeks = Array.from({ length: 12 }, (_, i) => addDays(D.week, (i - 11) * 7)).reverse();
+  return `<p class="label" style="margin-top:12px">주별 조회 (카드) — 기록 없는 주는 —</p>
+    <div class="res"><table><thead><tr><th>주 시작</th>${accts.map(a => `<th class="n">${esc(a)}</th>`).join("")}</tr></thead><tbody>
+    ${weeks.map(w => `<tr><td>${w}</td>${accts.map(a => {
+      const hit = D.trend.rows.find(r => r.account === a && r.week_start === w);
+      return `<td class="n">${hit ? nf(hit.views) : "—"}</td>`; }).join("")}</tr>`).join("")}
+    </tbody></table></div>`;
+}
+
+// Asana «SNS 성과 분석 - n월 n주차»에 그대로 붙일 글. 숫자는 위 카드 · 표와 같은 결과에서만 가져온다.
+function reportText() {
+  const wk = D.week, sign = v => v == null ? "" : (v > 0 ? "+" : v < 0 ? "−" : "±") + Math.abs(v).toLocaleString("ko-KR");
+  const src = Object.keys(S.mine).length ? "내 파일" : "가상 데이터(연습용)";
+  const rec = $("#st-rec").textContent;
+  const L = [];
+  L.push(`SNS 성과 분석 - ${weekName(wk)}`);
+  L.push(`보고 기간: ${wk} ~ ${addDays(wk, 6)} (월~일)`);
+  L.push(`원본: Metricool 계정 화면 · 게시물 목록${rec !== "—" ? ` (게시물 기록일 ${rec})` : ""} · 데이터: ${src}`);
+  L.push(`※ IG와 TT 조회는 세는 방식이 달라 더하지 않았습니다. 카드 조회와 게시물 조회도 더하지 않았습니다.`);
+  L.push("", "ⓐ 전체 성과");
+  for (const r of D.kpi.rows) {
+    const p = PLAT[platOf(r.계정)] || platOf(r.계정);
+    const parts = r.조회_카드 == null ? ["이번 주 카드 기록 없음"] : [
+      `팔로워 ${nf(r.팔로워)}${r.팔로워_증감 == null ? "" : ` (${sign(r.팔로워_증감)})`}`,
+      `조회 ${nf(r.조회_카드)}${r.조회_전주대비_pct == null ? "" : ` (전주 대비 ${sign(r.조회_전주대비_pct)}%)`}`,
+      `인터랙션 ${nf(r.인터랙션_카드)}${r.인터랙션_전주대비_pct == null ? "" : ` (${sign(r.인터랙션_전주대비_pct)}%)`}`];
+    parts.push(`업로드 ${nf(r.업로드수)} / 목표 ${nf(r.목표)} (${r.달성_pct == null ? "—" : r.달성_pct + "%"})`);
+    L.push(`- ${r.계정} (${p}): ${parts.join(" · ")}`);
+    const notes = [];
+    if (r.비고) notes.push(r.비고);
+    if (r.posts_count_차이) notes.push(`카드 업로드 수와 게시물 파일이 ${Math.abs(r.posts_count_차이)}개 다름 — Asana 업로드 기록과 대조 필요`);
+    if (notes.length) L.push(`  확인: ${notes.join(" · ")}`);
+  }
+  L.push("", "ⓑ 분석: (직접 작성)", "", "ⓒ 상위 콘텐츠 (이번 주에 올린 게시물 · 조회 순)");
+  for (const a of D.kpi.rows.map(r => r.계정)) {
+    const rows = D.top.rows.filter(r => r.계정 === a);
+    L.push(`${a}${rows.length ? "" : " — 이번 주에 올린 게시물 없음"}`);
+    rows.forEach(r => L.push(`  ${r.순위}. ${r.콘텐츠} · ${r.분류} · ${r.카테고리} — 조회 ${nf(r.조회)} · 좋아요 ${nf(r.좋아요)} · 나이 ${r.나이_일 ?? "—"}일${r.나이_일 != null && r.나이_일 <= 3 ? " (덜 자람)" : ""}`));
+  }
+  L.push("", "ⓓ 다음 액션: (직접 작성)");
+  return L.join("\n");
+}
+
+$("#dash-week").addEventListener("change", async e => {
+  D.week = e.target.value;
+  $("#tab-dash").classList.add("loading");
+  try { await drawWeek(); dashMsg(""); } catch (err) { dashMsg(err.message, "err"); }
+  $("#tab-dash").classList.remove("loading");
+});
+document.querySelectorAll(".seg [data-plat]").forEach(b => b.addEventListener("click", () => {
+  D.plat = b.dataset.plat;
+  document.querySelectorAll(".seg [data-plat]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  if (D.kpi) paintDash();
+}));
+$("#btn-report").addEventListener("click", async () => {
+  const text = $("#report-text").value;
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch (e) { ok = false; }
+  if (!ok) {   // 클립보드 권한이 없으면 미리 보기를 펼쳐 골라 둔다
+    $("#report-box").open = true;
+    const ta = $("#report-text"); ta.focus(); ta.select();
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+  }
+  dashMsg(ok ? `복사했습니다 — Asana «SNS 성과 분석 - ${weekName(D.week)}»에 붙여 넣고 ⓑ · ⓓ를 채우세요.`
+    : "복사하지 못했습니다 — 아래 «보고서 요약 미리 보기»에서 골라 직접 복사하세요.", ok ? "ok" : "err");
+});
+
+// 차트 말풍선 — data-tip 이 있는 곳 위에서. 글자는 textContent 로만 넣는다
+const tip = $("#tip");
+document.addEventListener("pointermove", e => {
+  const t = e.target.closest?.("[data-tip]");
+  if (!t) { tip.hidden = true; return; }
+  tip.textContent = t.dataset.tip; tip.hidden = false;
+  const x = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8);
+  tip.style.left = `${Math.max(8, x)}px`; tip.style.top = `${e.clientY - tip.offsetHeight - 10}px`;
+});
+document.addEventListener("pointerleave", () => { tip.hidden = true; });
+
 // ── 탭 ───────────────────────────────────────────────
 document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x === b));
-  ["preset", "ask", "tables", "mine"].forEach(k => { $("#tab-" + k).hidden = k !== b.dataset.tab; });
+  ["dash", "preset", "ask", "tables", "mine"].forEach(k => { $("#tab-" + k).hidden = k !== b.dataset.tab; });
 }));
 
 // ── 내 파일로 — 넣기 ─────────────────────────────────────
@@ -364,15 +645,15 @@ $("#btn-mine-reset").addEventListener("click", () => location.reload());
 (async () => {
   const [sch, qs] = await Promise.all([fetch("schema.json").then(r => r.json()), fetch("questions.json").then(r => r.json())]);
   S.schema = sch; S.questions = qs.questions; S.files = qs.files || [];
-  renderQuestions(); renderTables();
+  renderQuestions(); renderTables(); renderErd();
   $("#mine-rule").textContent = S.files.length
     ? "파일 이름으로 표를 고릅니다 — " + S.files.map(f => `«${f.match}»가 든 파일 → ${f.table}`).join(" · ")
     : "questions.json 에 files 가 없어 내 파일을 받을 수 없습니다";
   try {
     await startEngine();
-    $("#engine").textContent = "준비됨 · 표는 질문에 나올 때 받습니다";
-    $("#engine").classList.add("ready");
+    engineLine();
     document.body.dataset.engine = "ready";
+    renderDash();
   } catch (e) {
     $("#engine").textContent = "데이터 엔진을 불러오지 못했습니다 — 인터넷 연결을 확인하십시오";
     document.body.dataset.engine = "fail";

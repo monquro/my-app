@@ -4,28 +4,87 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>숏폼 4계정 주간 성과</title>
-<meta name="description" content="질문을 고르거나 쓰면 SQL이 돌고 표가 뜹니다. 모든 답 옆에 SQL이 있습니다. 데이터베이스는 이 브라우저 안에 있습니다.">
+<meta name="description" content="매주 월요일, Metricool 파일을 넣고 Asana 주간 보고의 ⓐ 전체 성과 표 · ⓒ 상위 콘텐츠 표를 뽑는 SQL 앱. 데이터베이스는 이 브라우저 안에 있습니다.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<main id="app">
 
-  <header class="top">
-    <div class="badge">4주차 · 내 주제</div>
-    <h1>숏폼 4계정 주간 성과</h1>
-    <p class="muted">질문을 고르거나 쓰면 <b>SQL</b>이 돌고 표가 뜹니다.
-      <b>모든 답 옆에 SQL이 있습니다</b> — 어떻게 셌는지 보이지 않는 숫자는 믿지 않습니다.</p>
-    <p id="engine" class="engine">데이터 엔진 준비 중…</p>
-  </header>
-
-  <nav class="tabs" role="tablist">
-    <button role="tab" data-tab="preset" aria-selected="true">준비한 질문</button>
+<header class="top">
+  <div class="wrap top-in">
+    <div class="title">
+      <div class="badge">4주차 · 주간 보고용</div>
+      <h1>숏폼 4계정 주간 성과</h1>
+      <p class="sub">매주 월요일, Metricool 파일을 넣고 Asana «SNS 성과 분석»의 ⓐ · ⓒ 표를 뽑습니다.
+        <b>모든 숫자 옆에 SQL이 있습니다.</b></p>
+    </div>
+    <dl class="status" aria-label="데이터 상태">
+      <div><dt>기준 주</dt><dd id="st-week">—</dd></div>
+      <div><dt>데이터</dt><dd id="st-src">가상 데이터</dd></div>
+      <div><dt>기록일</dt><dd id="st-rec">—</dd></div>
+      <div><dt>표</dt><dd id="st-tables">— / 3</dd></div>
+      <div><dt>엔진</dt><dd id="engine" class="engine">준비 중…</dd></div>
+    </dl>
+  </div>
+</header>
+<div class="tabbar">
+  <nav class="tabs wrap" role="tablist">
+    <button role="tab" data-tab="dash" aria-selected="true">대시보드</button>
+    <button role="tab" data-tab="preset" aria-selected="false">준비한 질문</button>
     <button role="tab" data-tab="ask" aria-selected="false">직접 묻기</button>
     <button role="tab" data-tab="tables" aria-selected="false">표 보기</button>
     <button role="tab" data-tab="mine" aria-selected="false">내 파일로</button>
   </nav>
+</div>
 
-  <section id="tab-preset" class="panel">
+<main id="app" class="wrap">
+
+  <section id="tab-dash" class="panel plain">
+    <div class="filters">
+      <label class="field">기준 주
+        <select id="dash-week" aria-label="기준 주"></select>
+      </label>
+      <div class="seg" role="group" aria-label="플랫폼">
+        <button data-plat="all" aria-pressed="true">전체</button>
+        <button data-plat="IG" aria-pressed="false">Instagram</button>
+        <button data-plat="TT" aria-pressed="false">TikTok</button>
+      </div>
+      <span class="grow"></span>
+      <button id="btn-report" class="primary sm" disabled>보고서 요약 복사</button>
+    </div>
+    <p id="dash-msg" class="dash-msg" role="status" hidden></p>
+
+    <div class="sec-head">
+      <h2>ⓐ 계정별 이번 주 <small id="dash-range"></small></h2>
+      <p class="cap">조회 · 인터랙션 · 팔로워는 Metricool 계정 화면의 카드 값, 업로드는 게시물 파일에서 센 수입니다.
+        IG와 TT는 세는 방식이 달라 <b>합계를 내지 않습니다.</b></p>
+    </div>
+    <div id="dash-cards" class="kcards"></div>
+    <p id="dash-yt" class="cap"></p>
+
+    <div class="sec-head">
+      <h2>ⓒ 상위 콘텐츠 <small>이번 주에 올린 게시물 · 조회 순 5개</small></h2>
+      <p class="cap">게시물 조회는 올린 날부터 기록 전날까지의 누적이라, <b>나이 3일 이하</b>는 아직 덜 자란 숫자입니다.
+        카드 조회와 더하지 않습니다.</p>
+    </div>
+    <div id="dash-top" class="tops"></div>
+
+    <details class="box" id="report-box">
+      <summary>보고서 요약 미리 보기 — Asana에 붙일 글</summary>
+      <textarea id="report-text" rows="18" readonly spellcheck="false"></textarea>
+    </details>
+    <details class="box">
+      <summary>이 화면의 SQL과 주별 숫자</summary>
+      <p class="cap">카드와 상위 콘텐츠는 «준비한 질문»의 weekly_kpi · top_posts 와 같은 SQL에서 «가장 늦은 주»만 고른 주로 바꿔 돌립니다.</p>
+      <div id="dash-sql"></div>
+      <div id="dash-weekly"></div>
+    </details>
+  </section>
+
+  <section id="tab-preset" class="panel" hidden>
+    <div class="panel-head">
+      <p class="cap">검증한 질문을 SQL과 함께 저장해 두었습니다. 지금 올라와 있는 데이터(가상 데이터 또는 내 파일)로 다시 계산합니다.</p>
+      <button id="btn-run-all" class="ghost sm">모두 실행</button>
+    </div>
     <div id="qlist" class="qlist"></div>
   </section>
 
@@ -34,19 +93,24 @@
     <textarea id="nl" rows="2" placeholder="예) 가장 늦은 주의 계정별 조회와 전주 대비는?"></textarea>
     <div class="row"><button id="btn-nl" class="ghost">SQL 만들기 (AI)</button></div>
     <p id="nl-msg" class="note" hidden></p>
-    <label class="label" for="sql" style="margin-top:14px">SQL — 읽고, 고치고, 실행합니다</label>
+    <div class="label-row" style="margin-top:14px">
+      <label class="label" for="sql">SQL — 읽고, 고치고, 실행합니다</label>
+      <span class="hint" id="run-hint">Ctrl+Enter로 실행</span>
+    </div>
     <textarea id="sql" rows="8" class="code" spellcheck="false">SELECT * FROM account_weekly ORDER BY week_start DESC, account LIMIT 8</textarea>
     <div class="row"><button id="btn-run" class="primary">실행</button></div>
     <div id="ask-out"></div>
   </section>
 
   <section id="tab-tables" class="panel" hidden>
+    <h3 class="h3">표 사이의 연결</h3>
+    <div id="erd" class="erd"></div>
     <p class="note" id="schema-note"></p>
     <div id="tables"></div>
   </section>
 
   <section id="tab-mine" class="panel" hidden>
-    <p class="small">시스템에서 내려받은 엑셀이나 CSV를 넣으면, <b>준비한 질문</b>과 <b>직접 묻기</b>가 그 파일로 돕니다.
+    <p class="small">시스템에서 내려받은 엑셀이나 CSV를 넣으면, <b>대시보드</b> · <b>준비한 질문</b> · <b>직접 묻기</b>가 그 파일로 돕니다.
       다음 주 파일을 넣으면 같은 질문이 다음 주 숫자를 냅니다.</p>
     <label id="drop" class="drop" for="mine-file">
       파일을 여기에 끌어다 놓거나 눌러서 고르기 (여러 개 한꺼번에)
@@ -60,10 +124,11 @@
   </section>
 
   <footer class="fineprint">
-    데이터는 전부 만들어낸 것입니다. 데이터베이스(DuckDB)는 <b>이 브라우저 안</b>에서 돕니다.
+    처음 들어 있는 데이터는 연습용 가상 데이터입니다. 데이터베이스(DuckDB)는 <b>이 브라우저 안</b>에서 돕니다.
     AI에게는 질문 문장과 표 설명만 보냅니다 — 데이터는 보내지 않습니다.
   </footer>
 </main>
+<div id="tip" class="tip" role="tooltip" hidden></div>
 <script src="lib/xlsx.full.min.js"></script>
 <script type="module" src="app.js"></script>
 </body>
