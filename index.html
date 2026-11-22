@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<a class="skip" href="#app">본문으로 건너뛰기</a>
 
 <header class="top">
   <div class="wrap top-in">
@@ -36,7 +37,7 @@
   </nav>
 </div>
 
-<main id="app" class="wrap">
+<main id="app" class="wrap" tabindex="-1">
 
   <section id="tab-dash" class="panel plain">
     <div class="filters">
@@ -58,7 +59,13 @@
       <p class="cap">조회 · 인터랙션 · 팔로워는 Metricool 계정 화면의 카드 값, 업로드는 게시물 파일에서 센 수입니다.
         IG와 TT는 세는 방식이 달라 <b>합계를 내지 않습니다.</b></p>
     </div>
-    <div id="dash-cards" class="kcards"></div>
+    <div id="dash-cards" class="kcards" aria-label="계정 카드">
+      <!-- 데이터가 오기 전 자리 (움직이지 않는 회색 칸) -->
+      <div class="kcard skel" aria-hidden="true"><i class="sk w30"></i><i class="sk w60 tall"></i><i class="sk chart"></i><i class="sk"></i><i class="sk"></i></div>
+      <div class="kcard skel" aria-hidden="true"><i class="sk w30"></i><i class="sk w60 tall"></i><i class="sk chart"></i><i class="sk"></i><i class="sk"></i></div>
+      <div class="kcard skel" aria-hidden="true"><i class="sk w30"></i><i class="sk w60 tall"></i><i class="sk chart"></i><i class="sk"></i><i class="sk"></i></div>
+      <div class="kcard skel" aria-hidden="true"><i class="sk w30"></i><i class="sk w60 tall"></i><i class="sk chart"></i><i class="sk"></i><i class="sk"></i></div>
+    </div>
     <p id="dash-yt" class="cap"></p>
 
     <div class="sec-head">

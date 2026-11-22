@@ -414,6 +414,7 @@ function dashMsg(text, kind) {
 async function renderDash() {
   dashMsg("");
   $("#tab-dash").classList.add("loading");
+  $("#tab-dash").setAttribute("aria-busy", "true");
   try {
     const weeks = (await run("SELECT DISTINCT CAST(week_start AS DATE) AS w FROM account_weekly ORDER BY w DESC")).rows.map(r => r.w).filter(isDay);
     if (!weeks.length) throw new Error("계정주간 표에 주(week_start)가 없습니다");
@@ -427,6 +428,7 @@ async function renderDash() {
     $("#btn-report").disabled = true;
   }
   $("#tab-dash").classList.remove("loading");
+  $("#tab-dash").removeAttribute("aria-busy");
 }
 
 async function drawWeek() {
@@ -483,8 +485,11 @@ function spark(series, account) {
   const hits = series.map((s, i) => `<rect class="hit" x="${(x(i) - step / 2).toFixed(1)}" y="0" width="${step.toFixed(1)}" height="${H}"
     data-tip="${s.w} 주 · ${s.v == null ? "카드 기록 없음" : "조회(카드) " + nf(s.v)}"></rect>`).join("");
   const gaps = series.filter(s => s.v == null).map(s => s.w.slice(5));
-  return `<svg class="spark" viewBox="0 0 ${W} ${H}" role="img"
-      aria-label="${esc(account)} 최근 12주 조회(카드), ${nf(Math.min(...vals))}에서 ${nf(Math.max(...vals))} 사이">
+  // 키보드로 와도 같은 내용을 볼 수 있게 — 포커스하면 요약 말풍선, 화면 읽기에는 같은 문장
+  const sum = `${account} 최근 12주 조회(카드) · 최저 ${nf(lo)} · 최고 ${nf(hi)} · 이번 주 ${cur.v == null ? "기록 없음" : nf(cur.v)}`
+    + (gaps.length ? ` · 기록 없는 주 ${gaps.length}개` : "");
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" role="img" tabindex="0"
+      aria-label="${esc(sum)}" data-focus-tip="${esc(sum)}">
       <path d="${d}" class="line"/>${lone}
       ${cur.v != null ? `<circle cx="${x(n - 1).toFixed(1)}" cy="${y(cur.v).toFixed(1)}" r="4" class="cur"/>` : ""}${hits}</svg>
     <p class="spark-cap">최근 12주 조회(카드)${gaps.length ? ` · 기록 없는 주 ${gaps.length}개 (${gaps.join(", ")})` : ""}</p>`;
@@ -500,6 +505,12 @@ function card(r) {
   const flags = [];
   if (r.posts_count_차이) flags.push(["warn", `카드의 업로드 수(${nf(r.업로드수 + r.posts_count_차이)})와 게시물 파일(${nf(r.업로드수)}개)이 다릅니다 — Asana 업로드 기록과 대조`]);
   const pct = r.달성_pct;
+  // 업로드 대 목표 — 불릿 막대: 막대 = 업로드, 세로선 = 목표. 축은 목표의 1.5배(넘으면 업로드)까지라 넘친 것도 보인다
+  const up = r.업로드수 || 0, goal = r.목표;
+  const axis = Math.max(goal ? goal * 1.5 : 0, up, 1);
+  const bullet = `<div class="bullet" role="img" aria-label="업로드 ${up}개, 목표 ${goal ?? "없음"}개${pct == null ? "" : `, 달성 ${pct}%`}">
+      <i style="width:${(up / axis * 100).toFixed(1)}%"></i>${goal ? `<b style="left:${(goal / axis * 100).toFixed(1)}%"></b>` : ""}</div>
+    <p class="bullet-cap" aria-hidden="true"><span>막대 = 업로드</span><span>세로선 = 목표 ${nf(goal)}개</span></p>`;
   return `<article class="kcard" data-plat="${esc(p)}">
     <header><b>${esc(a)}</b><span class="pl pl-${esc(p)}">${esc(PLAT[p] || p)}</span></header>
     <div class="kmain">
@@ -514,8 +525,7 @@ function card(r) {
       <div><dt>인터랙션 (카드)</dt><dd>${nf(r.인터랙션_카드)} ${r.인터랙션_전주대비_pct == null ? "" : delta(r.인터랙션_전주대비_pct, "%")}</dd></div>
       <div><dt>업로드</dt><dd><b>${nf(r.업로드수)}</b> / 목표 ${nf(r.목표)} · ${pct == null ? "—" : pct + "%"}</dd></div>
     </dl>
-    <div class="meter" role="meter" aria-label="업로드 목표 달성" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(pct || 0, 100)}">
-      <i style="width:${Math.min(pct || 0, 100)}%"></i></div>
+    ${bullet}
     ${flags.length ? `<ul class="flags">${flags.map(([k, t]) => `<li class="${k}"><span class="fi" aria-hidden="true">${k === "warn" ? "!" : "i"}</span>${esc(t)}</li>`).join("")}</ul>` : ""}
   </article>`;
 }
@@ -625,12 +635,38 @@ document.addEventListener("pointermove", e => {
   tip.style.left = `${Math.max(8, x)}px`; tip.style.top = `${e.clientY - tip.offsetHeight - 10}px`;
 });
 document.addEventListener("pointerleave", () => { tip.hidden = true; });
+// 키보드 포커스에도 같은 말풍선 (마우스 올리기에만 기대지 않는다)
+document.addEventListener("focusin", e => {
+  const t = e.target.closest?.("[data-focus-tip]");
+  if (!t) return;
+  tip.textContent = t.dataset.focusTip; tip.hidden = false;
+  const r = t.getBoundingClientRect();
+  tip.style.left = `${Math.max(8, Math.min(r.left, innerWidth - tip.offsetWidth - 8))}px`;
+  tip.style.top = `${Math.min(innerHeight - tip.offsetHeight - 8, r.bottom + 6)}px`;   // 아래에 — 큰 숫자를 가리지 않게
+});
+document.addEventListener("focusout", e => { if (e.target.closest?.("[data-focus-tip]")) tip.hidden = true; });
 
-// ── 탭 ───────────────────────────────────────────────
-document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
-  document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x === b));
-  ["dash", "preset", "ask", "tables", "mine"].forEach(k => { $("#tab-" + k).hidden = k !== b.dataset.tab; });
-}));
+// ── 탭 — 누르기 + 키보드(←/→ · Home/End), 고른 탭만 Tab 키로 들어간다 ─────────
+const tabBtns = [...document.querySelectorAll(".tabs [role=tab]")];
+tabBtns.forEach(b => {
+  b.id = "tabbtn-" + b.dataset.tab;
+  b.setAttribute("aria-controls", "tab-" + b.dataset.tab);
+  b.tabIndex = b.getAttribute("aria-selected") === "true" ? 0 : -1;
+  const p = $("#tab-" + b.dataset.tab);
+  p.setAttribute("role", "tabpanel"); p.setAttribute("aria-labelledby", b.id);
+  b.addEventListener("click", () => {
+    tabBtns.forEach(x => { x.setAttribute("aria-selected", String(x === b)); x.tabIndex = x === b ? 0 : -1; });
+    tabBtns.forEach(x => { $("#tab-" + x.dataset.tab).hidden = x !== b; });
+  });
+});
+$(".tabs").addEventListener("keydown", e => {
+  const i = tabBtns.indexOf(document.activeElement);
+  if (i < 0) return;
+  const j = e.key === "ArrowRight" ? (i + 1) % tabBtns.length : e.key === "ArrowLeft" ? (i - 1 + tabBtns.length) % tabBtns.length
+    : e.key === "Home" ? 0 : e.key === "End" ? tabBtns.length - 1 : -1;
+  if (j < 0) return;
+  e.preventDefault(); tabBtns[j].focus(); tabBtns[j].click();
+});
 
 // ── 내 파일로 — 넣기 ─────────────────────────────────────
 // 고른 뒤 값을 비운다 — 같은 파일을 다시 골라도 반응하게
@@ -657,5 +693,7 @@ $("#btn-mine-reset").addEventListener("click", () => location.reload());
   } catch (e) {
     $("#engine").textContent = "데이터 엔진을 불러오지 못했습니다 — 인터넷 연결을 확인하십시오";
     document.body.dataset.engine = "fail";
+    $("#dash-cards").innerHTML = ""; $("#dash-top").innerHTML = "";
+    dashMsg("데이터 엔진을 불러오지 못했습니다 — 인터넷 연결을 확인하고 새로고침하십시오", "err");
   }
 })();
