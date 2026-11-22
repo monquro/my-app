@@ -26,6 +26,7 @@
    - CSV 열: post_id · posted_date · format · title · category · views · likes · comments · shares · saved(IG만) · full_video_rate(TT만). 앱은 열 이름을 바꿔 주지 않습니다.
 4. **목표 · 계정주간 · 계정별 게시물 파일을 «내 파일로»에 한꺼번에 넣고**, weekly_kpi · top_posts 를 실행합니다(summary_12w 는 달마다). 파일 하나만 고쳤어도 다시 넣을 때는 전부 한꺼번에 넣습니다.
    - weekly_kpi · top_posts 는 계정주간에서 가장 늦은 주를 보고, 그 주에 올린 게시물을 게시물 파일에서 찾습니다.
+   - «준비한 질문»은 8개를 단계로 나눴습니다 — 현황(weekly_kpi · top_posts · summary_12w) → 비교(format_ig · category_mix) → 원인 탐색(week_change · uploads_views) → 처방(upload_baseline). 비교 · 원인 탐색은 Asana ⓑ 분석의 근거, 처방은 ⓓ 다음 액션의 기준선입니다. 원인 탐색은 «같이 바뀐 것»을 찾을 뿐 원인을 확정하지 않습니다.
    - summary_12w 는 계정주간의 가장 늦은 주부터 거슬러 12주(가장 늦은 주 − 77일 ~ 가장 늦은 주)만 세고, 목표를 12주로 곱해 달성률을 냅니다. 13주 이상 넣어도 앞의 주는 빠집니다. 그 12주치 게시물 파일이 모두 들어 있어야 맞는 값입니다.
 5. «대시보드»에서 **보고서 요약 복사**를 눌러 Asana «SNS 성과 분석 - n월 n주차» 에 붙이고, ⓑ 분석 · ⓓ 다음 액션만 직접 씁니다. 붙는 글의 ⓐ · ⓒ 숫자는 weekly_kpi · top_posts 결과와 같습니다.
    - 대시보드는 weekly_kpi · top_posts SQL에서 «가장 늦은 주»만 «기준 주»로 바꿔 돌립니다. 기준 주를 바꾸면 지난 주도 볼 수 있습니다.

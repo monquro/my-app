@@ -191,6 +191,13 @@ details.box[open] summary { margin-bottom: 8px; }
   background: var(--accent-soft); padding: 2px 8px; border-radius: 6px; margin-top: 2px; }
 .qmain { flex: 1; min-width: 0; }
 .qtags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 2px; }
+.stage-tabs { display: flex; width: 100%; margin: 0 0 12px; }
+.stage-tabs button { flex: 1; }
+.stage { font-size: 12px; font-weight: 700; padding: 0 8px; border-radius: 999px; margin-right: 6px; line-height: 1.6; }
+.stage.st-0 { background: #F1F3F9; color: var(--body); }
+.stage.st-1 { background: var(--accent-soft); color: var(--accent); }
+.stage.st-2 { background: var(--warn-soft); color: var(--warn); }
+.stage.st-3 { background: var(--ok-soft); color: var(--ok); }
 .qtag { font-size: 12px; font-weight: 700; color: var(--muted); }
 .qtag + .qtag::before { content: "· "; }
 .qtitle { display: block; font-size: 15px; font-weight: 700; color: var(--ink); line-height: 1.45; }

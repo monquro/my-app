@@ -18,6 +18,7 @@
   "questions": [
     {
       "id": "weekly_kpi",
+      "stage": "현황",
       "q": "가장 늦은 주, 계정마다 팔로워 · 조회 · 인터랙션은 전주보다 어땠고, 업로드는 목표 대비 어땠나 (ⓐ 전체 성과 표)",
       "tags": [
         "매주 월요일",
@@ -49,6 +50,7 @@
     },
     {
       "id": "top_posts",
+      "stage": "현황",
       "q": "가장 늦은 주에 올린 게시물 가운데, 계정마다 조회가 높은 5개는 무엇인가 (ⓒ 상위 콘텐츠 표)",
       "tags": [
         "매주 월요일",
@@ -81,6 +83,7 @@
     },
     {
       "id": "summary_12w",
+      "stage": "현황",
       "q": "계정마다 최근 12주를 한 줄로 — 카드 조회 합 · 게시물 수 · 업로드 목표 달성률 · 게시물 한 개당 조회수 (A_YT 포함)",
       "tags": [
         "달마다",
@@ -106,6 +109,172 @@
           },
           "col": "업로드목표달성률",
           "want": 1.417
+        }
+      ]
+    },
+    {
+      "id": "format_ig",
+      "stage": "비교",
+      "q": "최근 12주, IG 계정의 포맷(Reels · Carousel · Post)별 게시물 한 개당 조회는 얼마나 다른가 — 나이 4일 이상만",
+      "tags": [
+        "달마다",
+        "ⓑ 분석 근거"
+      ],
+      "judge": "계정마다 따로 본다(브랜드마다 조회 규모가 다르다). 덜 자란 게시물(나이 3일 이하)은 빼고, 뺀 개수를 같이 본다. TT는 Video 하나라 비교하지 않는다",
+      "defs": [
+        "게시물 한 개당 조회 — posts 의 views 평균. 중앙값을 같이 봐서 한두 개 큰 게시물에 끌려가지 않았는지 확인한다",
+        "나이 4일 이상 — recorded_on − posted_date ≥ 4. 월요일 기록에서 지난주 금~일 게시물(1~3일)은 덜 자란 숫자라 뺀다",
+        "최근 12주 — 계정주간의 가장 늦은 주 − 77일 ~ 가장 늦은 주에 올린 게시물"
+      ],
+      "sql": "WITH latest AS (\n  SELECT MAX(CAST(week_start AS DATE)) AS wk FROM account_weekly\n), p AS (\n  SELECT p.account, p.format, p.views,\n         CAST(p.recorded_on AS DATE) - CAST(p.posted_date AS DATE) AS age\n  FROM posts p\n  JOIN targets t ON t.account = p.account, latest l\n  WHERE t.platform = 'IG'\n    AND CAST(date_trunc('week', CAST(p.posted_date AS DATE)) AS DATE) BETWEEN l.wk - 77 AND l.wk\n)\nSELECT account AS 계정,\n       format AS 포맷,\n       COUNT(*) FILTER (WHERE age >= 4) AS 게시물수,\n       COUNT(*) FILTER (WHERE age < 4) AS 뺀_덜자란_게시물,\n       ROUND(AVG(views) FILTER (WHERE age >= 4), 1) AS 게시물당조회수,\n       MEDIAN(views) FILTER (WHERE age >= 4) AS 조회_중앙값\nFROM p\nGROUP BY account, format\nORDER BY account, 게시물당조회수 DESC",
+      "check": [
+        {
+          "where": {
+            "계정": "A_IG",
+            "포맷": "Reels"
+          },
+          "col": "게시물당조회수",
+          "want": 4368.2
+        },
+        {
+          "where": {
+            "계정": "B_IG",
+            "포맷": "Post"
+          },
+          "col": "게시물수",
+          "want": 8
+        }
+      ]
+    },
+    {
+      "id": "category_mix",
+      "stage": "비교",
+      "q": "최근 12주, 계정마다 카테고리(매장 홍보 · 부스 관련 · 비관련)별 게시물 한 개당 조회와 반응률은 — 나이 4일 이상만",
+      "tags": [
+        "달마다",
+        "ⓑ 분석 근거"
+      ],
+      "judge": "계정마다 따로 본다. 두 IG 계정을 합치면 브랜드 규모 차이 때문에 순서가 뒤집힐 수 있다. 게시물이 10개 미만인 칸은 우연일 수 있다",
+      "defs": [
+        "반응률 — IG: (shares + saved) ÷ views · TT: (shares + comments) ÷ views. 묶음 안 게시물의 합끼리 나눈다(%)",
+        "나이 4일 이상 — recorded_on − posted_date ≥ 4",
+        "게시물 한 개당 조회 — posts 의 views 평균"
+      ],
+      "sql": "WITH latest AS (\n  SELECT MAX(CAST(week_start AS DATE)) AS wk FROM account_weekly\n), p AS (\n  SELECT p.account, t.platform, p.category, p.views, p.shares, p.saved, p.comments,\n         CAST(p.recorded_on AS DATE) - CAST(p.posted_date AS DATE) AS age\n  FROM posts p\n  JOIN targets t ON t.account = p.account, latest l\n  WHERE CAST(date_trunc('week', CAST(p.posted_date AS DATE)) AS DATE) BETWEEN l.wk - 77 AND l.wk\n)\nSELECT account AS 계정,\n       category AS 카테고리,\n       COUNT(*) AS 게시물수,\n       ROUND(AVG(views), 1) AS 게시물당조회수,\n       ROUND(100.0 * SUM(CASE WHEN platform = 'IG' THEN shares + saved ELSE shares + comments END) / SUM(views), 2) AS 반응률_pct\nFROM p\nWHERE age >= 4\nGROUP BY account, category\nORDER BY account, category",
+      "check": [
+        {
+          "where": {
+            "계정": "A_IG",
+            "카테고리": "부스 관련"
+          },
+          "col": "게시물수",
+          "want": 5
+        },
+        {
+          "where": {
+            "계정": "A_TT",
+            "카테고리": "부스 관련"
+          },
+          "col": "반응률_pct",
+          "want": 0.82
+        }
+      ]
+    },
+    {
+      "id": "week_change",
+      "stage": "원인 탐색",
+      "q": "가장 늦은 주와 전주 — 조회(카드)가 바뀐 계정은 업로드 수 · 포맷 · 카테고리 구성도 같이 바뀌었나",
+      "tags": [
+        "매주 월요일",
+        "ⓑ 분석 근거"
+      ],
+      "judge": "같이 바뀐 것을 찾는 질문이지 원인을 확정하지 않는다. 카드 조회에는 지난 게시물이 받은 조회도 들어 있다. 카드 기록이 없는 주는 조회가 비어 있다",
+      "defs": [
+        "영상형 — format 이 Reels · Video · 이미지형 — Carousel · Post",
+        "업로드 수 — posts 에서 그 주(월~일)에 올린 게시물 수",
+        "조회 (카드) — account_weekly 의 views. 게시물 조회와 더하지 않는다"
+      ],
+      "sql": "WITH latest AS (\n  SELECT MAX(CAST(week_start AS DATE)) AS wk FROM account_weekly\n), wk AS (\n  SELECT l.wk AS w, '이번 주' AS 주 FROM latest l\n  UNION ALL\n  SELECT l.wk - 7, '전주' FROM latest l\n), accts AS (\n  SELECT DISTINCT account FROM account_weekly\n), p AS (\n  SELECT p.*, CAST(date_trunc('week', CAST(p.posted_date AS DATE)) AS DATE) AS w FROM posts p\n)\nSELECT a.account AS 계정,\n       wk.주,\n       wk.w AS 주_시작,\n       aw.views AS 조회_카드,\n       COUNT(p.post_id) AS 업로드수,\n       COUNT(*) FILTER (WHERE p.format IN ('Reels', 'Video')) AS 영상형,\n       COUNT(*) FILTER (WHERE p.format IN ('Carousel', 'Post')) AS 이미지형,\n       COUNT(*) FILTER (WHERE p.category = '매장 홍보') AS 매장홍보,\n       COUNT(*) FILTER (WHERE p.category = '부스 관련') AS 부스관련,\n       COUNT(*) FILTER (WHERE p.category = '비관련') AS 비관련\nFROM accts a\nCROSS JOIN wk\nLEFT JOIN account_weekly aw ON aw.account = a.account AND CAST(aw.week_start AS DATE) = wk.w\nLEFT JOIN p ON p.account = a.account AND p.w = wk.w\nGROUP BY a.account, wk.주, wk.w, aw.views\nORDER BY a.account, wk.w DESC",
+      "check": [
+        {
+          "where": {
+            "계정": "A_TT",
+            "주": "전주"
+          },
+          "col": "조회_카드",
+          "want": 88791
+        },
+        {
+          "where": {
+            "계정": "B_TT",
+            "주": "전주"
+          },
+          "col": "업로드수",
+          "want": 9
+        }
+      ]
+    },
+    {
+      "id": "uploads_views",
+      "stage": "원인 탐색",
+      "q": "최근 12주, 업로드를 많이 한 주에 조회(카드)도 많았나 — 계정마다",
+      "tags": [
+        "달마다",
+        "ⓑ 분석 근거"
+      ],
+      "judge": "상관은 같이 움직였다는 뜻이지 업로드가 조회를 늘렸다는 뜻이 아니다. 카드가 있는 주만 11개라 표본이 작다. 못 채운 주가 1~2개인 계정의 평균은 믿기 어렵다",
+      "defs": [
+        "업로드_조회_상관 — 카드 기록이 있는 주의 (업로드 수, 조회(카드)) 상관계수. −1 ~ 1",
+        "목표 채운 주 — 그 주 업로드 수 ≥ weekly_post_target",
+        "업로드 수 — posts 에서 그 주에 올린 게시물 수. 없으면 0"
+      ],
+      "sql": "WITH latest AS (\n  SELECT MAX(CAST(week_start AS DATE)) AS wk FROM account_weekly\n), aw AS (\n  SELECT a.account, CAST(a.week_start AS DATE) AS w, a.views\n  FROM account_weekly a, latest l\n  WHERE CAST(a.week_start AS DATE) BETWEEN l.wk - 77 AND l.wk\n), up AS (\n  SELECT account, CAST(date_trunc('week', CAST(posted_date AS DATE)) AS DATE) AS w, COUNT(*) AS n\n  FROM posts\n  GROUP BY 1, 2\n), j AS (\n  SELECT aw.account, aw.w, aw.views, COALESCE(up.n, 0) AS n, t.weekly_post_target AS goal\n  FROM aw\n  LEFT JOIN up ON up.account = aw.account AND up.w = aw.w\n  JOIN targets t ON t.account = aw.account\n)\nSELECT account AS 계정,\n       COUNT(*) AS 카드있는_주,\n       ROUND(CORR(n, views), 2) AS 업로드_조회_상관,\n       COUNT(*) FILTER (WHERE n >= goal) AS 목표채운_주,\n       ROUND(AVG(views) FILTER (WHERE n >= goal), 0) AS 채운주_평균조회,\n       COUNT(*) FILTER (WHERE n < goal) AS 못채운_주,\n       ROUND(AVG(views) FILTER (WHERE n < goal), 0) AS 못채운주_평균조회\nFROM j\nGROUP BY account\nORDER BY account",
+      "check": [
+        {
+          "where": {
+            "계정": "B_IG"
+          },
+          "col": "업로드_조회_상관",
+          "want": 0.9
+        },
+        {
+          "where": {
+            "계정": "A_TT"
+          },
+          "col": "못채운_주",
+          "want": 2
+        }
+      ]
+    },
+    {
+      "id": "upload_baseline",
+      "stage": "처방",
+      "q": "업로드 목표를 지키게 하면 조회가 늘까 — 다음 4주와 비교할 기준선 (최근 12주)",
+      "tags": [
+        "달마다",
+        "ⓓ 다음 액션 기준선"
+      ],
+      "judge": "처방의 효과를 이 표로 판단하지 않는다. 조치를 시작하기 전 숫자를 남겨 두고, 4주 뒤 같은 질문을 다시 돌려 비교한다. 다른 일(이벤트 · 시즌)이 같이 바뀌면 차이를 조치 탓으로 보지 않는다",
+      "defs": [
+        "목표 달성 주 비율 — 업로드 수 ≥ weekly_post_target 인 주 ÷ 12",
+        "업로드 0개인 주 — 그 주에 올린 게시물이 없는 주",
+        "주 평균 조회 (카드) — 카드 기록이 있는 주의 views 평균. 빠진 주는 0이 아니라 뺀다"
+      ],
+      "sql": "WITH latest AS (\n  SELECT MAX(CAST(week_start AS DATE)) AS wk FROM account_weekly\n), weeks AS (\n  SELECT l.wk - CAST(7 * i AS INTEGER) AS w FROM latest l, range(12) r(i)\n), accts AS (\n  SELECT account, weekly_post_target AS goal FROM targets\n  WHERE account IN (SELECT DISTINCT account FROM account_weekly)\n), up AS (\n  SELECT account, CAST(date_trunc('week', CAST(posted_date AS DATE)) AS DATE) AS w, COUNT(*) AS n\n  FROM posts\n  GROUP BY 1, 2\n), g AS (\n  SELECT a.account, a.goal, wk.w, COALESCE(up.n, 0) AS n, CAST(aw.views AS DOUBLE) AS views\n  FROM accts a\n  CROSS JOIN weeks wk\n  LEFT JOIN up ON up.account = a.account AND up.w = wk.w\n  LEFT JOIN account_weekly aw ON aw.account = a.account AND CAST(aw.week_start AS DATE) = wk.w\n)\nSELECT account AS 계정,\n       goal AS 주간목표,\n       COUNT(*) AS 주수,\n       ROUND(AVG(n), 2) AS 주평균_업로드,\n       COUNT(*) FILTER (WHERE n >= goal) AS 목표채운_주,\n       ROUND(100.0 * COUNT(*) FILTER (WHERE n >= goal) / COUNT(*), 1) AS 목표달성주_pct,\n       COUNT(*) FILTER (WHERE n = 0) AS 업로드0_주,\n       ROUND(AVG(views), 0) AS 주평균_조회_카드\nFROM g\nGROUP BY account, goal\nORDER BY account",
+      "check": [
+        {
+          "where": {
+            "계정": "B_IG"
+          },
+          "col": "목표달성주_pct",
+          "want": 66.7
+        },
+        {
+          "where": {
+            "계정": "B_IG"
+          },
+          "col": "업로드0_주",
+          "want": 2
         }
       ]
     }

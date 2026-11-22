@@ -257,7 +257,8 @@ function fmt(v) {
   return esc(v);
 }
 
-function render({ fields, rows }) {
+// bars: 마지막 열을 막대로 — 준비한 질문에서는 끈다(마지막 열이 늘 비교할 값은 아니고, IG · TT 를 한 축에 올리게 된다)
+function render({ fields, rows }, { bars = true } = {}) {
   const head = `<tr>${fields.map(f => `<th>${esc(f)}</th>`).join("")}</tr>`;
   const body = rows.slice(0, 50).map(r => `<tr>${fields.map(f =>
     `<td class="${typeof r[f] === "number" ? "n" : ""}">${fmt(r[f])}</td>`).join("")}</tr>`).join("");
@@ -265,7 +266,7 @@ function render({ fields, rows }) {
   if (rows.length > 50) html += `<p class="small muted">… ${rows.length}줄 중 50줄만 보여줍니다</p>`;
   // 막대 — 첫 열이 글자이고 마지막 열이 숫자일 때
   const last = fields[fields.length - 1];
-  if (rows.length > 1 && rows.length <= 20 && typeof rows[0][fields[0]] === "string" && typeof rows[0][last] === "number") {
+  if (bars && rows.length > 1 && rows.length <= 20 && typeof rows[0][fields[0]] === "string" && typeof rows[0][last] === "number") {
     const max = Math.max(...rows.map(r => Math.abs(r[last]))) || 1;
     html += `<div class="bars">` + rows.map(r => `<div class="bar"><span class="l">${esc(r[fields[0]])}</span>`
       + `<span class="t"><i style="width:${(Math.abs(r[last]) / max) * 100}%"></i></span><span class="v">${fmt(r[last])}</span></div>`).join("") + `</div>`;
@@ -286,14 +287,26 @@ function checks(q, res) {
 }
 
 // ── 준비한 질문 ───────────────────────────────────────
+// 분석 단계 — 현황(무슨 일) → 비교 → 원인 탐색(왜) → 처방(그래서 무엇을). 탭으로 거른다.
+const STAGES = ["현황", "비교", "원인 탐색", "처방"];
+function renderStageTabs() {
+  const n = k => S.questions.filter(q => (q.stage || "현황") === k).length;
+  const tabs = [["all", `전체 ${S.questions.length}`], ...STAGES.filter(n).map(k => [k, `${k} ${n(k)}`])];
+  $("#stage-tabs").innerHTML = tabs.map(([k, t], i) => `<button data-stage="${esc(k)}" aria-pressed="${i === 0}">${esc(t)}</button>`).join("");
+  $("#stage-tabs").querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+    $("#stage-tabs").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    document.querySelectorAll(".q").forEach(q => { q.hidden = b.dataset.stage !== "all" && q.dataset.stage !== b.dataset.stage; });
+  }));
+}
+
 // 결과가 먼저, SQL 은 «SQL 보기»를 눌러야 펼쳐진다. 카드 머리에 주기 · 보고서 칸, 안에 판단 기준과 지표 정의.
 const defLine = d => { const k = d.indexOf(" — "); return k < 0 ? esc(d) : `<b>${esc(d.slice(0, k))}</b> — ${esc(d.slice(k + 3))}`; };
 function renderQuestions() {
   $("#qlist").innerHTML = S.questions.map((q, i) => `
-    <div class="q" id="q-${q.id}">
+    <div class="q" id="q-${q.id}" data-stage="${esc(q.stage || "현황")}">
       <button class="qhead" data-q="${q.id}" aria-expanded="false">
         <span class="qno">Q${i + 1}</span>
-        <span class="qmain">${(q.tags || []).length ? `<span class="qtags">${q.tags.map(t => `<span class="qtag">${esc(t)}</span>`).join("")}</span>` : ""}
+        <span class="qmain"><span class="qtags"><span class="stage st-${STAGES.indexOf(q.stage || "현황")}">${esc(q.stage || "현황")}</span>${(q.tags || []).map(t => `<span class="qtag">${esc(t)}</span>`).join("")}</span>
           <span class="qtitle">${esc(q.q)}</span></span>
         <svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg>
       </button>
@@ -321,7 +334,7 @@ async function runQ(b) {
   const q = S.questions.find(x => x.id === b.dataset.run);
   const out = b.closest(".q").querySelector(".out");
   b.disabled = true; b.textContent = "실행 중…";
-  try { const res = await run(q.sql); out.innerHTML = render(res) + checks(q, res); out.dataset.done = "1"; }
+  try { const res = await run(q.sql); out.innerHTML = render(res, { bars: false }) + checks(q, res); out.dataset.done = "1"; }
   catch (e) { out.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
   b.disabled = false; b.textContent = "실행";
 }
@@ -330,7 +343,7 @@ async function runQ(b) {
 $("#btn-run-all").addEventListener("click", async e => {
   const all = e.currentTarget;
   all.disabled = true;
-  for (const q of document.querySelectorAll(".q")) {
+  for (const q of [...document.querySelectorAll(".q")].filter(x => !x.hidden)) {
     q.querySelector(".body").hidden = false;
     q.querySelector("[data-q]").setAttribute("aria-expanded", "true");
     await runQ(q.querySelector("[data-run]"));
@@ -779,7 +792,7 @@ $("#btn-mine-reset").addEventListener("click", () => location.reload());
 (async () => {
   const [sch, qs] = await Promise.all([fetch("schema.json").then(r => r.json()), fetch("questions.json").then(r => r.json())]);
   S.schema = sch; S.questions = qs.questions; S.files = qs.files || [];
-  renderQuestions(); renderTables(); renderErd();
+  renderQuestions(); renderStageTabs(); renderTables(); renderErd();
   $("#mine-rule").textContent = S.files.length
     ? "파일 이름으로 표를 고릅니다 — " + S.files.map(f => `«${f.match}»가 든 파일 → ${f.table}`).join(" · ")
     : "questions.json 에 files 가 없어 내 파일을 받을 수 없습니다";
