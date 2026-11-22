@@ -59,6 +59,8 @@ function engineLine() {
   $("#st-src").textContent = mine.length ? `내 파일 ${nFiles}개 · 표 ${mine.length}개` : "가상 데이터";
   $("#st-src").title = mine.length ? full : "";
   $("#st-src").classList.toggle("mine", mine.length > 0);
+  $("#src-badge").textContent = mine.length ? "내 파일" : "가상 데이터";
+  $("#src-badge").classList.toggle("mine", mine.length > 0);
   $("#st-tables").textContent = `${S.loaded.size} / ${Object.keys(S.schema.tables).length}`;
   $("#engine").textContent = mine.length ? "내 파일로 묻는 중" : "준비됨";
   $("#engine").title = mine.length ? full : "";

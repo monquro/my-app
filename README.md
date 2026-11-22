@@ -1,4 +1,4 @@
-# 숏폼 4계정 주간 성과 — SQL 앱 (동료용)
+# 숏폼 주간 리포트 — 숏폼 4계정 주간 성과 SQL 앱 (동료용)
 
 앱 주소: https://my-app-beta-eight-76.vercel.app
 

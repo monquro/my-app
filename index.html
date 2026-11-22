@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>숏폼 4계정 주간 성과</title>
-<meta name="description" content="매주 월요일, Metricool 파일을 넣고 Asana 주간 보고의 ⓐ 전체 성과 표 · ⓒ 상위 콘텐츠 표를 뽑는 SQL 앱. 데이터베이스는 이 브라우저 안에 있습니다.">
+<title>숏폼 주간 리포트</title>
+<meta name="description" content="숏폼 4계정(IG · TikTok) 주간 리포트 — 매주 월요일, Metricool 파일을 넣고 Asana 주간 보고의 ⓐ 전체 성과 표 · ⓒ 상위 콘텐츠 표를 뽑는 SQL 앱. 데이터베이스는 이 브라우저 안에 있습니다.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,11 +12,14 @@
 
 <header class="top">
   <div class="wrap top-in">
-    <div class="title">
-      <div class="badge">4주차 · 주간 보고용</div>
-      <h1>숏폼 4계정 주간 성과</h1>
-      <p class="sub">매주 월요일, Metricool 파일을 넣고 Asana «SNS 성과 분석»의 ⓐ · ⓒ 표를 뽑습니다.
-        <b>모든 숫자 옆에 SQL이 있습니다.</b></p>
+    <div class="title brand">
+      <span class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><rect x="4" y="12" width="3.2" height="8" rx="1"/><rect x="10.4" y="8" width="3.2" height="12" rx="1"/><rect x="16.8" y="4" width="3.2" height="16" rx="1"/></svg>
+      </span>
+      <div>
+        <h1>숏폼 주간 리포트 <span id="src-badge" class="badge">가상 데이터</span></h1>
+        <p class="sub">IG · TikTok 4계정 · Metricool → Asana ⓐ · ⓒ 표 · <b>모든 숫자 옆에 SQL</b></p>
+      </div>
     </div>
     <dl class="status" aria-label="데이터 상태">
       <div><dt>기준 주</dt><dd id="st-week">—</dd></div>
