@@ -72,6 +72,25 @@
     <p id="dash-yt" class="cap"></p>
 
     <div class="sec-head">
+      <h2>12주 추이 <small id="trend-range"></small></h2>
+      <p class="cap">메트리쿨에 없는 기준으로 그립니다 — 주는 월~일, 목표는 우리 업로드 목표, 기록이 빠진 주는 선을 끊습니다.
+        IG와 TT를 한 차트에 올리거나 더하지 않고 계정마다 따로 봅니다.</p>
+    </div>
+    <div class="seg trend-acct" id="trend-acct" role="group" aria-label="추이를 볼 계정"></div>
+    <div id="trend" class="trend">
+      <figure class="chartbox">
+        <figcaption>주별 조회 (카드)</figcaption>
+        <div class="cv"><canvas id="ch-views" role="img" aria-label="주별 조회 차트"></canvas></div>
+        <p class="cap" id="ch-views-cap"></p>
+      </figure>
+      <figure class="chartbox">
+        <figcaption>주별 업로드와 목표</figcaption>
+        <div class="cv"><canvas id="ch-ups" role="img" aria-label="주별 업로드 차트"></canvas></div>
+        <p class="cap" id="ch-ups-cap"></p>
+      </figure>
+    </div>
+
+    <div class="sec-head">
       <h2>ⓒ 상위 콘텐츠 <small>이번 주에 올린 게시물 · 조회 순 5개</small></h2>
       <p class="cap">게시물 조회는 올린 날부터 기록 전날까지의 누적이라, <b>나이 3일 이하</b>는 아직 덜 자란 숫자입니다.
         카드 조회와 더하지 않습니다.</p>
@@ -139,6 +158,7 @@
   </footer>
 </main>
 <div id="tip" class="tip" role="tooltip" hidden></div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="lib/xlsx.full.min.js"></script>
 <script type="module" src="app.js"></script>
 </body>

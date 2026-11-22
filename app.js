@@ -420,6 +420,7 @@ async function renderDash() {
   try {
     const weeks = (await run("SELECT DISTINCT CAST(week_start AS DATE) AS w FROM account_weekly ORDER BY w DESC")).rows.map(r => r.w).filter(isDay);
     if (!weeks.length) throw new Error("계정주간 표에 주(week_start)가 없습니다");
+    D.weeks = weeks;   // 데이터가 시작하는 주 — 그보다 앞 주는 «0»이 아니라 «데이터 없음»
     if (!weeks.includes(D.week)) D.week = weeks[0];
     $("#dash-week").innerHTML = weeks.map(w => `<option value="${w}"${w === D.week ? " selected" : ""}>`
       + `${w} ~ ${addDays(w, 6).slice(5)} · ${weekName(w)}${w === weeks[0] ? " · 가장 늦은 주" : ""}</option>`).join("");
@@ -450,7 +451,16 @@ WHERE CAST(date_trunc('week', CAST(posted_date AS DATE)) AS DATE) = w.wk`;
   // 차례로 돌린다 — 연결 하나에서 한 번에 하나씩
   const kpi = await run(kSql), top = await run(tSql), trend = await run(trendSql), rec = await run(recSql);
   const tgt = await run("SELECT account, platform, weekly_post_target FROM targets ORDER BY account");
-  Object.assign(D, { kpi, top, trend, tgt, sql: { "ⓐ 계정 카드 (weekly_kpi)": kSql, "ⓒ 상위 콘텐츠 (top_posts)": tSql, "최근 12주 추이": trendSql } });
+  // 주별 업로드 수 — weekly_kpi 의 «업로드수»와 같은 방법(게시물 파일에서 그 주에 올린 게시물을 센다)
+  const upsSql = `WITH w AS (SELECT CAST('${wk}' AS DATE) AS wk)
+SELECT p.account, CAST(date_trunc('week', CAST(p.posted_date AS DATE)) AS DATE) AS week_start, COUNT(*) AS n
+FROM posts p, w
+WHERE CAST(date_trunc('week', CAST(p.posted_date AS DATE)) AS DATE) BETWEEN w.wk - 77 AND w.wk
+GROUP BY ALL
+ORDER BY 1, 2`;
+  const ups = await run(upsSql);
+  Object.assign(D, { kpi, top, trend, tgt, ups, sql: { "ⓐ 계정 카드 (weekly_kpi)": kSql, "ⓒ 상위 콘텐츠 (top_posts)": tSql,
+    "12주 추이 — 조회 (카드)": trendSql, "12주 추이 — 업로드": upsSql } });
 
   const end = addDays(wk, 6);
   $("#st-week").textContent = `${wk} ~ ${end.slice(5)}`;
@@ -556,17 +566,103 @@ function paintDash() {
   $("#dash-yt").textContent = quiet.length
     ? `${quiet.map(t => `${t.account}(${PLAT[t.platform] || t.platform}, 주 ${t.weekly_post_target}개 목표)`).join(" · ")}는 목표만 있고 아직 계정주간 기록이 없어 카드에서 뺐습니다.`
     : "";
+  drawTrend();
 }
 
+// 기준 주까지 12주 — 데이터가 시작하기 전 주는 null
+const last12 = () => Array.from({ length: 12 }, (_, i) => addDays(D.week, (i - 11) * 7));
+const before = w => D.weeks?.length && w < D.weeks[D.weeks.length - 1];
+const upsOf = (a, w) => before(w) ? null : (D.ups.rows.find(r => r.account === a && r.week_start === w)?.n ?? 0);
+
 function weeklyTable() {
-  const accts = [...new Set(D.trend.rows.map(r => r.account))].sort();
-  const weeks = Array.from({ length: 12 }, (_, i) => addDays(D.week, (i - 11) * 7)).reverse();
-  return `<p class="label" style="margin-top:12px">주별 조회 (카드) — 기록 없는 주는 —</p>
+  const accts = [...new Set([...D.trend.rows.map(r => r.account), ...D.ups.rows.map(r => r.account)])].sort();
+  const weeks = last12().reverse();
+  const grid = (title, cell) => `<p class="label" style="margin-top:12px">${title}</p>
     <div class="res"><table><thead><tr><th>주 시작</th>${accts.map(a => `<th class="n">${esc(a)}</th>`).join("")}</tr></thead><tbody>
-    ${weeks.map(w => `<tr><td>${w}</td>${accts.map(a => {
-      const hit = D.trend.rows.find(r => r.account === a && r.week_start === w);
-      return `<td class="n">${hit ? nf(hit.views) : "—"}</td>`; }).join("")}</tr>`).join("")}
+    ${weeks.map(w => `<tr><td>${w}</td>${accts.map(a => `<td class="n">${cell(a, w)}</td>`).join("")}</tr>`).join("")}
     </tbody></table></div>`;
+  return grid("주별 조회 (카드) — 기록 없는 주는 —", (a, w) => { const h = D.trend.rows.find(r => r.account === a && r.week_start === w); return h ? nf(h.views) : "—"; })
+    + grid("주별 업로드 (게시물 파일) — 데이터 시작 전은 —", (a, w) => { const v = upsOf(a, w); return v == null ? "—" : nf(v); });
+}
+
+// ── 12주 추이 — Chart.js ──────────────────────────────
+// 메트리쿨에 없는 기준으로만 그린다: 월~일 주, 우리 업로드 목표, 빠진 주는 선을 끊는다.
+// 계정마다 따로 — IG 와 TT 를 한 축에 올리거나 더하지 않는다. 축은 하나씩(두 눈금 차트 없음).
+const C = { acct: null, charts: [] };
+const INK = "#1A1B23", MUTED = "#6B6F80", GRID = "#E7E9F1", AXIS = "#C9CCD8", ACCENT = "#1D4ED8";
+const kcompact = new Intl.NumberFormat("ko-KR", { notation: "compact", maximumFractionDigits: 1 });
+
+function drawTrend() {
+  const box = $("#trend");
+  C.charts.forEach(c => c.destroy()); C.charts = [];
+  if (!window.Chart) {
+    box.innerHTML = `<p class="cap">차트 라이브러리(Chart.js)를 불러오지 못했습니다 — 아래 «이 화면의 SQL과 주별 숫자»의 표로 같은 값을 볼 수 있습니다.</p>`;
+    return;
+  }
+  const accts = D.kpi.rows.map(r => r.계정).filter(a => D.plat === "all" || platOf(a) === D.plat);
+  if (!accts.includes(C.acct)) C.acct = accts[0] || null;
+  $("#trend-acct").innerHTML = accts.map(a => `<button data-acct="${esc(a)}" aria-pressed="${a === C.acct}">${esc(a)}</button>`).join("");
+  $("#trend-acct").querySelectorAll("[data-acct]").forEach(b => b.addEventListener("click", () => { C.acct = b.dataset.acct; drawTrend(); }));
+  $("#trend-range").textContent = `${last12()[0]} ~ ${addDays(D.week, 6)} · 계정마다 따로`;
+  if (!C.acct) return;
+
+  const a = C.acct, weeks = last12(), labels = weeks.map(w => w.slice(5));
+  const views = weeks.map(w => D.trend.rows.find(r => r.account === a && r.week_start === w)?.views ?? null);
+  const ups = weeks.map(w => upsOf(a, w));
+  const goal = D.tgt.rows.find(t => t.account === a)?.weekly_post_target ?? null;
+  const motion = matchMedia("(prefers-reduced-motion: reduce)").matches ? false : { duration: 250 };
+  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+  Chart.defaults.font.size = 12;
+  Chart.defaults.color = MUTED;
+  const base = {
+    responsive: true, maintainAspectRatio: false, animation: motion,
+    interaction: { mode: "index", intersect: false },   // 선이 아니라 주(X)를 찾는다
+    layout: { padding: { top: 4, right: 6 } },
+  };
+  const xAxis = { grid: { display: false }, border: { color: AXIS }, ticks: { maxRotation: 0, autoSkipPadding: 8 } };
+  const tipTitle = items => `${weeks[items[0].dataIndex]} 주 (월~일)`;
+
+  // ① 주별 조회 (카드) — 선 하나, 이번 주에만 점
+  const gaps = weeks.filter((w, i) => views[i] == null && !before(w)).map(w => w.slice(5));
+  C.charts.push(new Chart($("#ch-views"), {
+    type: "line",
+    data: { labels, datasets: [{ label: "조회 (카드)", data: views, borderColor: ACCENT, backgroundColor: ACCENT, borderWidth: 2,
+      spanGaps: false, tension: 0, borderJoinStyle: "round", borderCapStyle: "round",
+      // 이번 주에 점, 양옆이 비어 홀로 남은 주에도 점(선이 없으면 안 보이므로)
+      pointRadius: views.map((v, i) => v == null ? 0 : i === 11 ? 4 : (views[i - 1] == null && views[i + 1] == null ? 3 : 0)),
+      pointBorderColor: "#fff", pointBorderWidth: 2,
+      pointHoverRadius: 5, pointHitRadius: 14 }] },
+    options: { ...base,
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { title: tipTitle, label: it => it.raw == null ? " 카드 기록 없음" : ` 조회(카드) ${nf(it.raw)}` } } },
+      scales: { x: xAxis, y: { beginAtZero: true, grid: { color: GRID }, border: { display: false },
+        ticks: { maxTicksLimit: 6, callback: v => kcompact.format(v) } } } },
+  }));
+  const vv = views.filter(v => v != null);
+  $("#ch-views").setAttribute("aria-label", `${a} 주별 조회(카드) 12주: ${vv.length ? `최저 ${nf(Math.min(...vv))}, 최고 ${nf(Math.max(...vv))}, 이번 주 ${nf(views[11])}` : "기록 없음"}`);
+  $("#ch-views-cap").textContent = gaps.length ? `카드 기록이 없는 주는 선을 끊었습니다: ${gaps.join(", ")}` : "12주 모두 카드 기록이 있습니다.";
+
+  // ② 주별 업로드 + 목표 선 — 메트리쿨은 우리 목표를 모른다
+  const ds = [{ type: "bar", label: "업로드", data: ups, backgroundColor: ACCENT, hoverBackgroundColor: "#0037B0",
+    borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: "bottom", maxBarThickness: 24, pointStyle: "rect", order: 2 }];
+  if (goal) ds.push({ type: "line", label: `목표 (주 ${goal}개)`, data: labels.map(() => goal), borderColor: INK, backgroundColor: INK,
+    borderWidth: 2, pointRadius: 0, pointHitRadius: 0, pointStyle: "line", order: 1 });
+  C.charts.push(new Chart($("#ch-ups"), {
+    type: "bar",
+    data: { labels, datasets: ds },
+    options: { ...base,
+      plugins: { legend: { display: true, position: "top", align: "end",
+          labels: { usePointStyle: true, boxWidth: 14, boxHeight: 8, padding: 12, sort: (x, y) => x.datasetIndex - y.datasetIndex } },
+        tooltip: { itemSort: (x, y) => x.datasetIndex - y.datasetIndex, callbacks: { title: tipTitle, label: it => it.dataset.type === "line" ? ` 목표 ${nf(it.raw)}개` : ` 업로드 ${it.raw == null ? "데이터 없음" : nf(it.raw) + "개"}` } } },
+      scales: { x: xAxis, y: { beginAtZero: true, suggestedMax: goal ? Math.ceil(goal * 1.5) : undefined, grid: { color: GRID }, border: { display: false },
+        ticks: { precision: 0, maxTicksLimit: 6 } } } },
+  }));
+  const known = ups.filter(v => v != null);
+  const hit = goal ? known.filter(v => v >= goal).length : null;
+  $("#ch-ups").setAttribute("aria-label", `${a} 주별 업로드 12주${goal ? `, 목표 주 ${goal}개, 목표를 채운 주 ${hit}/${known.length}` : ""}`);
+  $("#ch-ups-cap").textContent = goal
+    ? `목표를 채운 주 ${hit} / ${known.length} · 업로드 0개인 주 ${known.filter(v => v === 0).length}개 · 업로드는 게시물 파일에서 센 수입니다.`
+    : "이 계정은 목표가 없습니다.";
 }
 
 // Asana «SNS 성과 분석 - n월 n주차»에 그대로 붙일 글. 숫자는 위 카드 · 표와 같은 결과에서만 가져온다.

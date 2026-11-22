@@ -173,6 +173,14 @@ details.box[open] summary { margin-bottom: 8px; }
 .tip { position: fixed; z-index: 50; pointer-events: none; background: var(--ink); color: #fff; font-size: 12px;
   padding: 5px 9px; border-radius: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
+/* 12주 추이 (Chart.js) */
+.trend-acct { margin: 0 0 10px; }
+.trend { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 12px; }
+.chartbox { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 12px 14px; min-width: 0; }
+.chartbox figcaption { font-size: 14px; font-weight: 700; color: var(--ink); }
+.chartbox .cv { position: relative; height: 230px; margin-top: 4px; }
+.chartbox .cap { margin-top: 6px; }
+
 /* ── 준비한 질문 ── */
 .qlist { display: flex; flex-direction: column; gap: 10px; }
 .q { border: 1px solid var(--line); border-radius: var(--radius-lg); background: #fff; min-width: 0; }
@@ -281,6 +289,8 @@ textarea.code { width: 100%; resize: vertical; line-height: 1.5; }
   .grow { display: none; }
   #btn-report { width: 100%; }
   .tops { grid-template-columns: 1fr; }
+  .trend { grid-template-columns: 1fr; }
+  .trend-acct { width: 100%; } .trend-acct button { flex: 1; }
   .panel-head { flex-direction: column; align-items: stretch; }
   .erd { flex-direction: column; }
   .elink { width: auto; align-items: flex-start; text-align: left; padding: 8px 0 10px 30px; }
