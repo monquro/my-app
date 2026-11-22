@@ -20,15 +20,23 @@ async function startEngine() {
   S.conn = await db.connect();
 }
 
-async function ensureTables(sql) {
+// 실행 버튼을 연달아 눌러도 표를 두 번 만들지 않게, 표 준비는 한 번에 하나씩 한다
+let tableLock = Promise.resolve();
+function ensureTables(sql) {
+  const p = tableLock.then(() => prepareTables(sql));
+  tableLock = p.catch(() => {});
+  return p;
+}
+
+async function prepareTables(sql) {
   const names = Object.keys(S.schema.tables).filter(t => new RegExp(`\\b${t}\\b`, "i").test(sql));
   // 내 파일을 하나라도 넣었으면, 파일로 바꿀 수 있는 표는 모두 내 파일이어야 한다.
-  // 빠진 표를 목업으로 채우면 내 숫자와 지어낸 숫자가 소리 없이 섞인다 — 그래서 멈춘다.
+  // 빠진 표를 가상 데이터로 채우면 내 숫자와 지어낸 숫자가 소리 없이 섞인다 — 그래서 멈춘다.
   if (Object.keys(S.mine).length) {
     const missing = S.files.filter(f => names.includes(f.table) && !S.mine[f.table]);
     if (missing.length) {
       throw new Error(`${missing.map(f => `«${f.match}»`).join(" · ")} 파일을 아직 넣지 않았습니다. `
-        + `내 파일과 목업 데이터가 섞이지 않게 멈췄습니다 — «내 파일로»에 마저 넣거나, «원래 데이터로 돌아가기»를 누르십시오.`);
+        + `내 파일과 가상 데이터가 섞이지 않게 멈췄습니다 — «내 파일로»에 마저 넣거나, «원래 데이터로 돌아가기»를 누르십시오.`);
     }
   }
   for (const t of names) {
@@ -44,9 +52,13 @@ async function ensureTables(sql) {
 
 function engineLine() {
   const mine = Object.keys(S.mine);
-  $("#engine").textContent = mine.length
-    ? `내 파일로 묻는 중 · ${mine.map(t => `${t} ← ${S.mine[t].file}`).join(" · ")}`
-    : `준비됨 · 불러온 표 ${S.loaded.size}개 / ${Object.keys(S.schema.tables).length}개`;
+  // 파일이 많으면 이름을 다 늘어놓지 않고 개수만 — 이름은 마우스를 올리면 보인다
+  const full = `내 파일로 묻는 중 · ${mine.map(t => `${t} ← ${S.mine[t].file}`).join(" · ")}`;
+  const nFiles = mine.reduce((s, t) => s + (S.mine[t].count || 1), 0);
+  $("#engine").textContent = !mine.length
+    ? `준비됨 · 불러온 표 ${S.loaded.size}개 / ${Object.keys(S.schema.tables).length}개`
+    : nFiles > 3 ? `내 파일로 묻는 중 · 파일 ${nFiles}개 · 표 ${mine.length}개` : full;
+  $("#engine").title = mine.length ? full : "";
   $("#engine").classList.add("ready");
 }
 
@@ -158,7 +170,7 @@ async function mergeIntoTable(table, files) {
   const n = Number((await S.conn.query(`SELECT count(*) AS n FROM ${table}`)).toArray()[0].n);
   S.loaded.add(table);
   const again = S.mine[table] ? ` · 앞서 넣은 «${esc(S.mine[table].file)}»를 대신합니다` : "";
-  S.mine[table] = { file: used.map(u => u.f.name).join(" + "), rows: n };
+  S.mine[table] = { file: used.map(u => u.f.name).join(" + "), count: used.length, rows: n };
   const ok = n === sumRead;
   const many = used.length > 1;
   used.forEach((u, k) => {
@@ -209,13 +221,24 @@ async function run(sql) {
   // 소수 자리가 정해진 숫자(DECIMAL)는 화면에서 읽기 어려운 모양으로 온다 — 보통 숫자로 바꿔 다시 받는다
   const dec = t.schema.fields.filter(f => String(f.type).startsWith("Decimal"));
   if (dec.length) {
-    const cols = t.schema.fields.map(f => dec.includes(f) ? `"${f.name}"::DOUBLE AS "${f.name}"` : `"${f.name}"`);
+    // 열 이름 안의 큰따옴표는 두 번 써야 한다 — sum("views") 같은 이름에서 깨지지 않게
+    const q = n => `"${String(n).replace(/"/g, '""')}"`;
+    const cols = t.schema.fields.map(f => dec.includes(f) ? `${q(f.name)}::DOUBLE AS ${q(f.name)}` : q(f.name));
     t = await S.conn.query(`SELECT ${cols.join(", ")} FROM (${safe})`);
   }
   const fields = t.schema.fields.map(f => f.name);
+  // 날짜 열은 밀리초 숫자로 온다 — 숫자처럼 보이지 않게 YYYY-MM-DD 글자로 바꾼다
+  const kind = Object.fromEntries(t.schema.fields.map(f => [f.name, String(f.type)]));
+  const day = v => new Date(v).toISOString().slice(0, 10);
   const rows = t.toArray().map(r => {
     const o = {};
-    fields.forEach(f => { const v = r[f]; o[f] = typeof v === "bigint" ? Number(v) : v; });
+    fields.forEach(f => {
+      let v = r[f];
+      if (typeof v === "bigint") v = Number(v);
+      if (v != null && kind[f].startsWith("Date")) v = day(v);
+      else if (v != null && kind[f].startsWith("Timestamp")) v = new Date(v).toISOString().slice(0, 19).replace("T", " ");
+      o[f] = v;
+    });
     return o;
   });
   return { fields, rows };
@@ -251,8 +274,8 @@ function checks(q, res) {
     const where = Object.values(c.where || {}).join(" ");
     return `<span class="${ok ? "ok" : "no"}">${ok ? "✓" : "✕"} ${esc(where)} ${esc(c.col)} ${fmt(c.want)}</span>`;
   }).join("") + (Object.keys(S.mine).some(t => new RegExp(`\\b${t}\\b`, "i").test(q.sql))
-    ? `<span class="muted">← 확인할 값은 목업 데이터의 값입니다. 내 파일에서는 달라도 됩니다</span>`
-    : `<span class="muted">← 실측결과와 대조</span>`) + `</div>`;
+    ? `<span class="muted">← 확인할 값은 가상 데이터의 값입니다. 내 파일에서는 달라도 됩니다</span>`
+    : `<span class="muted">← 가상 데이터 기댓값과 대조</span>`) + `</div>`;
 }
 
 // ── 준비한 질문 ───────────────────────────────────────
@@ -329,7 +352,8 @@ document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click
 }));
 
 // ── 내 파일로 — 넣기 ─────────────────────────────────────
-$("#mine-file").addEventListener("change", e => { if (e.target.files.length) loadMine([...e.target.files]); });
+// 고른 뒤 값을 비운다 — 같은 파일을 다시 골라도 반응하게
+$("#mine-file").addEventListener("change", e => { const fs = [...e.target.files]; e.target.value = ""; if (fs.length) loadMine(fs); });
 const drop = $("#drop");
 ["dragenter", "dragover"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("over"); }));
 ["dragleave", "drop"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("over"); }));
